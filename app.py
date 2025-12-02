@@ -11870,7 +11870,7 @@ def converter_para_formato_antigo(resultado_json):
     return formato_antigo
 
 
-@app.route('/leitor_edital', methods=['GET', 'POST'])
+@app.route('/precificaja/leitor_edital', methods=['GET', 'POST'])
 @login_required
 def leitor_edital_route():
     """
@@ -11927,7 +11927,7 @@ def leitor_edital_route():
 from flask import session, jsonify
 import json
 
-@app.route('/leitor_edital/analisar', methods=['POST'])
+@app.route('/precificaja/leitor_edital/analisar', methods=['POST'])
 def analisar_edital_route():
     # ... (lógica para receber o arquivo PDF) ...
     caminho_pdf = "..." # Caminho para o PDF salvo
@@ -11942,7 +11942,7 @@ def analisar_edital_route():
     return html_result
 
 
-@app.route('/api/get_edital_data', methods=['GET'])
+@app.route('/precificaja/api/get_edital_data', methods=['GET'])
 @login_required
 def get_edital_data():
     """
