@@ -1,0 +1,127 @@
+<!-- Modal Cadastrar/Editar Produto - VERSÃO CORRIGIDA -->
+<div class="modal fade" id="modalProduto" tabindex="-1" aria-labelledby="modalProdutoLabel">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-gradient-success text-white border-0">
+                <h5 class="modal-title" id="modalProdutoLabel">
+                    <i class="fas fa-cube me-2"></i>Cadastrar Produto
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formProduto" method="POST" action="{{ url_for('cadastrar_produto_fornecedor') }}">
+                <div class="modal-body">
+                    <input type="hidden" id="produto_id" name="produto_id">
+
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label for="nome" class="form-label fw-medium">Nome do Produto *</label>
+                            <input type="text" class="form-control" id="nome" name="nome" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="marca" class="form-label fw-medium">Marca</label>
+                            <input type="text" class="form-control" id="marca" name="marca">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="modelo" class="form-label fw-medium">Modelo</label>
+                            <input type="text" class="form-control" id="modelo" name="modelo">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="unidade_medida" class="form-label fw-medium">Unidade de Medida</label>
+                            <select class="form-select" id="unidade_medida" name="unidade_medida">
+                                <option value="UN">Unidade (UN)</option>
+                                <option value="KG">Quilograma (KG)</option>
+                                <option value="M">Metro (M)</option>
+                                <option value="M²">Metro Quadrado (M²)</option>
+                                <option value="M³">Metro Cúbico (M³)</option>
+                                <option value="L">Litro (L)</option>
+                                <option value="CX">Caixa (CX)</option>
+                                <option value="PC">Peça (PC)</option>
+                                <option value="PAR">Par (PAR)</option>
+                                <option value="KIT">Kit (KIT)</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="custo" class="form-label fw-medium">Custo *</label>
+                            <div class="input-group">
+                                <span class="input-group-text">R$</span>
+                                <input type="number" class="form-control" id="custo" name="custo"
+                                       step="0.01" min="0.01" required>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <label for="fornecedor_id" class="form-label fw-medium">Fornecedor</label>
+                            <select class="form-select" id="fornecedor_id" name="fornecedor_id">
+                                <option value="">Selecione um fornecedor (opcional)</option>
+                                {% for fornecedor in fornecedores %}
+                                <option value="{{ fornecedor.id }}">{{ fornecedor.nome_empresa }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i>Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save me-1"></i>Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+'''
+
+# ============================================================================
+# JAVASCRIPT CORRIGIDO
+# ============================================================================
+
+JAVASCRIPT_CORRIGIDO = '''
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const basePath = "/precificaja";
+
+    // Função para editar produto (CORRIGIDA)
+    window.editarProduto = function(id, nome, marca, modelo, unidade, custo, fornecedorId) {
+        console.log('Editando produto:', id, nome);
+
+        document.getElementById('produto_id').value = id;
+        document.getElementById('nome').value = nome || '';
+        document.getElementById('marca').value = marca || '';
+        document.getElementById('modelo').value = modelo || '';
+        document.getElementById('unidade_medida').value = unidade || 'UN';
+        document.getElementById('custo').value = custo || '';
+        document.getElementById('fornecedor_id').value = fornecedorId || '';
+
+        document.getElementById('modalProdutoLabel').innerHTML = '<i class="fas fa-edit me-2"></i>Editar Produto';
+        document.getElementById('formProduto').action = `${basePath}/produtos_fornecedores/editar`;
+
+        // Usar Bootstrap 5 API
+        const modal = new bootstrap.Modal(document.getElementById('modalProduto'));
+        modal.show();
+    };
+
+    // Configurar form de produto para cadastro (CORRIGIDO)
+    document.getElementById('modalProduto').addEventListener('show.bs.modal', function (event) {
+        if (!document.getElementById('produto_id').value) {
+            document.getElementById('modalProdutoLabel').innerHTML = '<i class="fas fa-cube me-2"></i>Cadastrar Produto';
+            document.getElementById('formProduto').action = `${basePath}/produtos_fornecedores/cadastrar`;
+            document.getElementById('formProduto').reset();
+        }
+    });
+
+    // Limpar form ao fechar modal (CORRIGIDO)
+    document.getElementById('modalProduto').addEventListener('hidden.bs.modal', function (event) {
+        document.getElementById('formProduto').reset();
+        document.getElementById('produto_id').value = '';
+        document.getElementById('modalProdutoLabel').innerHTML = '<i class="fas fa-cube me-2"></i>Cadastrar Produto';
+        document.getElementById('formProduto').action = `${basePath}/produtos_fornecedores/cadastrar`;
+    });
+});
+</script>

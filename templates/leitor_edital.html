@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+
+{% block title %}Leitor de Edital com IA{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-file-contract me-2"></i>
+                        Leitor de Edital com Inteligência Artificial
+                    </h4>
+                </div>
+                <div class="card-body">
+
+                    <!-- Aviso de uso de IA -->
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fas fa-triangle-exclamation me-2"></i>
+                        <strong>Aviso importante:</strong> Esta ferramenta usa Inteligência Artificial para
+                        <strong>resumir e organizar o edital</strong>, mas nenhuma IA é 100% confiável.
+                        Sempre faça uma <strong>segunda validação humana</strong> diretamente no edital
+                        oficial antes de enviar documentos, propostas ou assumir obrigações.
+                    </div>
+
+                    <!-- Formulário de upload -->
+                    <form method="POST" enctype="multipart/form-data" class="mb-4" id="form-edital">
+                        <div class="row g-3">
+                            <div class="col-md-9">
+                                <label for="edital_pdf" class="form-label fw-bold">
+                                    <i class="fas fa-upload me-2"></i>Selecione o arquivo PDF do edital
+                                </label>
+                                <input class="form-control" type="file" id="edital_pdf" name="edital_pdf" accept=".pdf" required>
+                                <div class="form-text">
+                                    Tamanho máximo: 20 MB. Formato aceito: PDF.
+                                </div>
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <button class="btn btn-primary w-100" type="submit">
+                                    <i class="fas fa-magic me-1"></i>
+                                    Ler edital
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    {% if erro %}
+                        <div class="alert alert-danger" role="alert">
+                            <i class="fas fa-exclamation-triangle me-2"></i>{{ erro }}
+                        </div>
+                    {% endif %}
+
+                    {% if resumo_ia %}
+                        <!-- =================== RESULTADO ESTRUTURADO POR JSON =================== -->
+
+                        <!-- 1. Informações gerais -->
+                        <h5 class="mt-3">Informações gerais do edital</h5>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle">
+                                <tbody>
+                                    <tr>
+                                        <th style="width: 25%;">Órgão / Razão social</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.razao_social or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>CNPJ</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.cnpj or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Endereço</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.endereco or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Número do processo</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.numero_processo or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Objeto</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.objeto or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Modalidade</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.modalidade or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Tipo de julgamento</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.tipo or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Data de abertura</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.data_abertura or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Validade da proposta (dias)</th>
+                                        <td>
+                                            {% if resumo_ia.informacoes_gerais.validade_proposta is not none %}
+                                                {{ resumo_ia.informacoes_gerais.validade_proposta }}
+                                            {% else %}
+                                                Não identificado
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Prazo de entrega (dias)</th>
+                                        <td>
+                                            {% if resumo_ia.informacoes_gerais.prazo_entrega is not none %}
+                                                {{ resumo_ia.informacoes_gerais.prazo_entrega }}
+                                            {% else %}
+                                                Não identificado
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Prazo de pagamento (dias)</th>
+                                        <td>
+                                            {% if resumo_ia.informacoes_gerais.prazo_pagamento is not none %}
+                                                {{ resumo_ia.informacoes_gerais.prazo_pagamento }}
+                                            {% else %}
+                                                Não identificado
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Valor total estimado</th>
+                                        <td>{{ resumo_ia.informacoes_gerais.valor_total or 'Não identificado' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 2. Prazos e local -->
+                        <h5 class="mt-4">Prazos e local de execução/entrega</h5>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle">
+                                <tbody>
+                                    <tr>
+                                        <th style="width: 25%;">Data de abertura</th>
+                                        <td>{{ resumo_ia.prazos.data_abertura or resumo_ia.informacoes_gerais.data_abertura or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Hora de abertura</th>
+                                        <td>{{ resumo_ia.prazos.hora_abertura or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Portal / Local da sessão</th>
+                                        <td>{{ resumo_ia.prazos.local_sessao or 'Não identificado' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Validade da proposta (dias)</th>
+                                        <td>
+                                            {% if resumo_ia.prazos.validade_proposta_dias is not none %}
+                                                {{ resumo_ia.prazos.validade_proposta_dias }}
+                                            {% else %}
+                                                {{ resumo_ia.informacoes_gerais.validade_proposta or 'Não identificado' }}
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Prazo de entrega (dias)</th>
+                                        <td>
+                                            {% if resumo_ia.prazos.prazo_entrega_dias is not none %}
+                                                {{ resumo_ia.prazos.prazo_entrega_dias }}
+                                            {% else %}
+                                                {{ resumo_ia.informacoes_gerais.prazo_entrega or 'Não identificado' }}
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Prazo de pagamento (dias)</th>
+                                        <td>
+                                            {% if resumo_ia.prazos.prazo_pagamento_dias is not none %}
+                                                {{ resumo_ia.prazos.prazo_pagamento_dias }}
+                                            {% else %}
+                                                {{ resumo_ia.informacoes_gerais.prazo_pagamento or 'Não identificado' }}
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Endereço de entrega/execução</th>
+                                        <td>{{ resumo_ia.prazos.endereco_entrega or 'Não identificado' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 3. Habilitação exigida -->
+                        <h5 class="mt-4">Habilitação exigida</h5>
+                        <div class="mb-2">
+                            <strong>Habilitação jurídica:</strong><br>
+                            <p class="mb-2">
+                                {{ resumo_ia.habilitacao.juridica or 'A IA não conseguiu detalhar a habilitação jurídica. Conferir diretamente no edital.' }}
+                            </p>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Regularidade fiscal e trabalhista:</strong><br>
+                            <p class="mb-2">
+                                {{ resumo_ia.habilitacao.regularidade_fiscal_trabalhista or 'A IA não conseguiu detalhar a regularidade fiscal/trabalhista. Conferir diretamente no edital.' }}
+                            </p>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Qualificação econômico-financeira:</strong><br>
+                            <p class="mb-2">
+                                {{ resumo_ia.habilitacao.qualificacao_economico_financeira or 'A IA não conseguiu detalhar a qualificação econômico-financeira. Conferir diretamente no edital.' }}
+                            </p>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Qualificação técnica:</strong><br>
+                            <p class="mb-2">
+                                {{ resumo_ia.habilitacao.qualificacao_tecnica or 'A IA não conseguiu detalhar a qualificação técnica. Conferir diretamente no edital.' }}
+                            </p>
+                        </div>
+                        <div class="mb-3">
+                            <strong>Outras exigências de habilitação:</strong><br>
+                            <p class="mb-0">
+                                {{ resumo_ia.habilitacao.outros or 'Nenhuma outra exigência destacada pela IA. Mesmo assim, é obrigatório conferir todas as declarações e anexos do edital.' }}
+                            </p>
+                        </div>
+
+                        <!-- 4. Exigências técnicas do objeto -->
+                        <h5 class="mt-4">Exigências técnicas do objeto</h5>
+                        {% if resumo_ia.exigencias_tecnicas %}
+                            <p>{{ resumo_ia.exigencias_tecnicas.replace('\n', '<br>')|safe }}</p>
+                        {% else %}
+                            <p class="text-muted">
+                                A IA não conseguiu extrair claramente as exigências técnicas. Leia com atenção o Termo de Referência
+                                e o Anexo de especificações do edital.
+                            </p>
+                        {% endif %}
+
+                        <!-- 5. Riscos, penalidades e pontos de atenção -->
+                        <h5 class="mt-4">Riscos, penalidades e pontos de atenção</h5>
+                        {% if resumo_ia.riscos_observacoes %}
+                            <p>{{ resumo_ia.riscos_observacoes.replace('\n', '<br>')|safe }}</p>
+                        {% else %}
+                            <p class="text-muted">
+                                A IA não destacou riscos específicos, mas isso NÃO significa que o edital esteja livre de pegadinhas.
+                                Revise cláusulas de penalidades, multas, garantias, glosas e condições de rescisão contratual.
+                            </p>
+                        {% endif %}
+
+                        <!-- 6. Itens / Lotes -->
+                        <h5 class="mt-4">
+                            Itens / Lotes identificados
+                            <small class="text-muted">({{ resumo_ia.itens|length }} itens estruturados pela IA)</small>
+                        </h5>
+                        {% if resumo_ia.itens and resumo_ia.itens|length > 0 %}
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width:6%;">Item</th>
+                                            <th>Descrição</th>
+                                            <th style="width:10%;">Qtd.</th>
+                                            <th style="width:10%;">Unid.</th>
+                                            <th style="width:12%;">V. Unitário</th>
+                                            <th style="width:12%;">V. Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for it in resumo_ia.itens %}
+                                            <tr>
+                                                <td>{{ it.item }}</td>
+                                                <td>{{ it.descricao }}</td>
+                                                <td>{{ it.quantidade }}</td>
+                                                <td>{{ it.unidade }}</td>
+                                                <td>{{ it.valor_unitario }}</td>
+                                                <td>{{ it.valor_total }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="text-muted small">
+                                Os itens acima foram estruturados automaticamente pela IA. Sempre confira com o Termo de Referência
+                                e planilhas anexas antes de enviar propostas ou lançar em calculadoras.
+                            </p>
+                        {% else %}
+                            <p class="text-muted">
+                                Nenhum item foi estruturado pela IA. Isso pode ocorrer em editais com tabelas muito complexas ou PDFs
+                                em imagem. Use o anexo oficial para conferir os itens/lotes.
+                            </p>
+                        {% endif %}
+
+                        <!-- 7. Integração com calculadoras -->
+                        <div class="mt-3">
+                            <h6>Usar esses dados nas calculadoras</h6>
+                            <p class="small text-muted mb-2">
+                                Os itens e as informações gerais deste edital foram salvos temporariamente na sua sessão.
+                                Ao abrir uma calculadora, o sistema tentará importar esses dados automaticamente.
+                            </p>
+                            <div class="d-flex flex-wrap gap-2">
+                                <!-- Ajuste os caminhos abaixo se as URLs do seu sistema forem diferentes -->
+                                <a href="/precificaja/simulacao/produtos" class="btn btn-success btn-sm me-2 mb-2">
+                                    <i class="fas fa-box-open me-1"></i>
+                                    Abrir calculadora de produtos
+                                </a>
+                                <a href="/precificaja/simulacao/servicos" class="btn btn-outline-success btn-sm mb-2">
+                                    <i class="fas fa-people-carry-box me-1"></i>
+                                    Abrir calculadora de serviços
+                                </a>
+                            </div>
+                            <p class="small text-muted mt-1 mb-0">
+                                Se você já estiver com uma calculadora aberta, recarregue a página para que ela tente
+                                buscar novamente os dados do último edital lido.
+                            </p>
+                        </div>
+
+                        <!-- Debug opcional: mostra o JSON bruto retornado pela IA -->
+                        <details class="mt-4">
+                            <summary style="cursor:pointer; font-weight:500;">
+                                <i class="fas fa-bug me-1"></i> Ver JSON bruto retornado pela IA (debug)
+                            </summary>
+                            <pre class="mt-2 bg-light p-2 small" style="white-space: pre-wrap;">{{ resumo_ia | tojson(indent=2) }}</pre>
+                        </details>
+
+                    {% elif resultado_analise %}
+                        <!-- Fallback: mostra HTML antigo se não houver JSON estruturado -->
+                        <div class="mt-4">
+                            {{ resultado_analise|safe }}
+                        </div>
+                    {% else %}
+                        <p class="text-muted mt-3">
+                            Envie um PDF de edital para ver aqui o resumo gerado pela IA.
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Coluna lateral com boas práticas -->
+        <div class="col-lg-4 mt-3 mt-lg-0">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="fas fa-lightbulb me-2 text-warning"></i>
+                        Boas práticas de uso
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <ul class="small mb-3">
+                        <li>Use sempre o <strong>PDF oficial</strong> publicado no portal de compras.</li>
+                        <li>Evite PDFs escaneados com má qualidade (se necessário, use OCR).</li>
+                        <li>Após o resumo, <strong>sempre valide prazos, habilitação e itens</strong> diretamente no edital.</li>
+                        <li>Em caso de dúvida, consulte sua assessoria contábil/jurídica ou o setor de compras.</li>
+                    </ul>
+                    <hr>
+                    <p class="small text-muted mb-1">
+                        Após a leitura, os dados podem ser enviados para as calculadoras do sistema
+                        (produtos/serviços), utilizando os botões disponíveis nesta página.
+                    </p>
+                    <p class="small text-muted mb-0">
+                        Lembre-se: a responsabilidade final pelo cumprimento do edital é sempre do licitante.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

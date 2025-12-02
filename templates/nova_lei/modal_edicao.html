@@ -1,0 +1,325 @@
+<!-- Modal de Edição de Proposta -->
+<div class="modal fade" id="modalEdicao" tabindex="-1" aria-labelledby="modalEdicaoLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <!-- Header -->
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="modalEdicaoLabel">
+                    <i class="fas fa-edit"></i>
+                    Editar Proposta
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            
+            <!-- Body -->
+            <div class="modal-body">
+                <form id="formEdicao">
+                    <!-- Hidden: ID do cenário -->
+                    <input type="hidden" id="edit_cenario_id">
+                    
+                    <!-- Tabs com cores bem visíveis -->
+                    <ul class="nav nav-tabs mb-3" id="tabsEdicao" role="tablist" style="border-bottom: 2px solid #dee2e6;">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="tab-dados" data-bs-toggle="tab" data-bs-target="#tab-dados-content" type="button" 
+                                    style="background-color: #0d6efd !important; color: white !important; font-weight: 600; border: 2px solid #0d6efd !important; border-radius: 8px 8px 0 0; padding: 12px 20px; margin-right: 5px;">
+                                <i class="fas fa-building"></i> Dados da Proposta
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-lotes" data-bs-toggle="tab" data-bs-target="#tab-lotes-content" type="button"
+                                    style="background-color: #e9ecef !important; color: #495057 !important; font-weight: 600; border: 2px solid #dee2e6 !important; border-radius: 8px 8px 0 0; padding: 12px 20px; margin-right: 5px;">
+                                <i class="fas fa-users"></i> Lotes e Postos
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-parametros" data-bs-toggle="tab" data-bs-target="#tab-parametros-content" type="button"
+                                    style="background-color: #e9ecef !important; color: #495057 !important; font-weight: 600; border: 2px solid #dee2e6 !important; border-radius: 8px 8px 0 0; padding: 12px 20px; margin-right: 5px;">
+                                <i class="fas fa-cog"></i> Parâmetros
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-resumo" data-bs-toggle="tab" data-bs-target="#tab-resumo-content" type="button"
+                                    style="background-color: #e9ecef !important; color: #495057 !important; font-weight: 600; border: 2px solid #dee2e6 !important; border-radius: 8px 8px 0 0; padding: 12px 20px;">
+                                <i class="fas fa-chart-line"></i> Resumo Financeiro
+                            </button>
+                        </li>
+                    </ul>
+                    
+                    <!-- Script para mudar cores das tabs ao clicar -->
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const tabs = document.querySelectorAll('#tabsEdicao .nav-link');
+                            tabs.forEach(tab => {
+                                tab.addEventListener('click', function() {
+                                    // Resetar todas as tabs
+                                    tabs.forEach(t => {
+                                        t.style.backgroundColor = '#e9ecef';
+                                        t.style.color = '#495057';
+                                        t.style.borderColor = '#dee2e6';
+                                    });
+                                    // Destacar tab ativa
+                                    this.style.backgroundColor = '#0d6efd';
+                                    this.style.color = 'white';
+                                    this.style.borderColor = '#0d6efd';
+                                });
+                            });
+                        });
+                    </script>
+                    
+                    <!-- Tab Content -->
+                    <div class="tab-content" id="tabsEdicaoContent">
+                        <!-- Tab 1: Dados da Proposta -->
+                        <div class="tab-pane fade show active" id="tab-dados-content">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">CNPJ</label>
+                                    <input type="text" class="form-control" id="edit_cnpj">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Razão Social</label>
+                                    <input type="text" class="form-control" id="edit_razao_social">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Endereço</label>
+                                    <input type="text" class="form-control" id="edit_endereco">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Número do Processo</label>
+                                    <input type="text" class="form-control" id="edit_numero_processo">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Tipo de Serviço</label>
+                                    <select class="form-select" id="edit_tipo_servico">
+                                        <option value="limpeza">Limpeza</option>
+                                        <option value="portaria">Portaria</option>
+                                        <option value="vigilancia">Vigilância</option>
+                                        <option value="manutencao">Manutenção</option>
+                                        <option value="construcao">Construção</option>
+                                        <option value="consultoria">Consultoria</option>
+                                        <option value="outros">Outros</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Validade da Proposta (dias)</label>
+                                    <input type="number" class="form-control" id="edit_validade_proposta">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Prazo de Pagamento (dias)</label>
+                                    <input type="number" class="form-control" id="edit_prazo_pagamento">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Prazo de Execução (meses)</label>
+                                    <input type="number" class="form-control" id="edit_prazo_execucao">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Local de Execução</label>
+                                    <input type="text" class="form-control" id="edit_local_execucao">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Tab 2: Lotes e Postos -->
+                        <div class="tab-pane fade" id="tab-lotes-content">
+                            <div id="edit_lotes_container">
+                                <!-- Lotes serão renderizados aqui via JavaScript -->
+                            </div>
+                            <button type="button" class="btn btn-primary mt-3" onclick="adicionarLoteModal()">
+                                <i class="fas fa-plus"></i> Adicionar Lote
+                            </button>
+                        </div>
+                        
+                        <!-- Tab 3: Parâmetros -->
+                        <div class="tab-pane fade" id="tab-parametros-content">
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <h6 class="text-primary">Encargos Sociais (%)</h6>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">INSS Patronal</label>
+                                    <input type="number" class="form-control" id="edit_inss_patronal" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Salário Educação</label>
+                                    <input type="number" class="form-control" id="edit_salario_educacao" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">RAT/SAT</label>
+                                    <input type="number" class="form-control" id="edit_rat_sat" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">FAP</label>
+                                    <input type="number" class="form-control" id="edit_fap" step="0.1">
+                                </div>
+                                
+                                <div class="col-12 mt-4">
+                                    <h6 class="text-primary">Regime Tributário</h6>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Regime</label>
+                                    <select class="form-select" id="edit_regime_tributario">
+                                        <option value="simples">Simples Nacional</option>
+                                        <option value="presumido">Lucro Presumido</option>
+                                        <option value="real">Lucro Real</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Alíquota Simples (%)</label>
+                                    <input type="number" class="form-control" id="edit_aliquota_simples" step="0.1">
+                                </div>
+                                
+                                <div class="col-12 mt-4">
+                                    <h6 class="text-primary">Custos Indiretos e Lucro (%)</h6>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Custos Indiretos</label>
+                                    <input type="number" class="form-control" id="edit_custos_indiretos" step="0.1">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Lucro</label>
+                                    <input type="number" class="form-control" id="edit_lucro_percentual" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Tab 4: Resumo Financeiro -->
+                        <div class="tab-pane fade" id="tab-resumo-content">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                O resumo será calculado automaticamente ao salvar as alterações.
+                            </div>
+                            
+                            <div class="row g-3">
+                                <!-- Custos Diretos -->
+                                <div class="col-12">
+                                    <h5 class="text-primary border-bottom pb-2">
+                                        <i class="fas fa-money-bill-wave"></i> Custos Diretos
+                                    </h5>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Remuneração Total</small>
+                                            <h4 class="mb-0" id="resumo_remuneracao">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Encargos e Benefícios</small>
+                                            <h4 class="mb-0" id="resumo_encargos">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Provisões</small>
+                                            <h4 class="mb-0" id="resumo_provisoes">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Reposição</small>
+                                            <h4 class="mb-0" id="resumo_reposicao">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Insumos</small>
+                                            <h4 class="mb-0" id="resumo_insumos">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-success text-white">
+                                        <div class="card-body">
+                                            <small>Subtotal</small>
+                                            <h4 class="mb-0" id="resumo_subtotal">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- CITL -->
+                                <div class="col-12 mt-4">
+                                    <h5 class="text-primary border-bottom pb-2">
+                                        <i class="fas fa-chart-pie"></i> CITL (Custos Indiretos, Tributos e Lucro)
+                                    </h5>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Custos Indiretos</small>
+                                            <h4 class="mb-0" id="resumo_custos_indiretos">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Tributos</small>
+                                            <h4 class="mb-0" id="resumo_tributos">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Lucro</small>
+                                            <h4 class="mb-0" id="resumo_lucro">R$ 0,00</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Total -->
+                                <div class="col-12 mt-4">
+                                    <div class="card bg-primary text-white">
+                                        <div class="card-body text-center">
+                                            <h5 class="mb-2">
+                                                <i class="fas fa-dollar-sign"></i> Preço Total da Proposta
+                                            </h5>
+                                            <h2 class="mb-0" id="resumo_total">R$ 0,00</h2>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Informações Adicionais -->
+                                <div class="col-md-6">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Total de Postos</small>
+                                            <h4 class="mb-0" id="resumo_total_postos">0</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <small class="text-muted">Margem de Lucro</small>
+                                            <h4 class="mb-0" id="resumo_margem_lucro">0%</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Footer -->
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+                <button type="button" class="btn btn-primary" onclick="salvarEdicaoModal()">
+                    <i class="fas fa-save"></i> Salvar Alterações
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+

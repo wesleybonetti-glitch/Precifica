@@ -1,0 +1,647 @@
+{% extends "base.html" %}
+
+{% block title %}Documentos Básicos{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header com Gradiente -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-lg" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="card-body text-white">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h1 class="mb-2">
+                                <i class="fas fa-file-alt me-3"></i>
+                                Documentos Básicos de Habilitação
+                            </h1>
+                            <p class="mb-0 opacity-75">
+                                Gerencie os documentos essenciais para habilitação de sua empresa em licitações
+                            </p>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <div class="d-flex align-items-center justify-content-end">
+                                <span class="badge bg-light text-dark fs-6 me-3">
+                                    <i class="fas fa-shield-alt me-1"></i>
+                                    Documentos Seguros
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ações Principais -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h3 class="mb-0">
+                <i class="fas fa-tools me-2"></i>
+                Ações Principais
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <button type="button"
+                            class="btn btn-success btn-lg w-100"
+                            data-bs-toggle="modal"
+                            data-bs-target="#addDocumentoModal">
+                        <i class="fas fa-plus me-2"></i>
+                        Adicionar Documento
+                    </button>
+                </div>
+                <div class="col-md-6">
+                    <button id="downloadSelecionados"
+                            class="btn btn-info btn-lg w-100">
+                        <i class="fas fa-download me-2"></i>
+                        Baixar Selecionados
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lista de Documentos -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-secondary text-white">
+            <h3 class="mb-0">
+                <i class="fas fa-list me-2"></i>
+                Documentos Cadastrados
+            </h3>
+        </div>
+        <div class="card-body">
+            {% if documentos %}
+                <form id="formSelecionarDocumentos" method="POST" action="{{ url_for('download_selecionados') }}">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th style="width: 50px;">
+                                        <div class="form-check">
+                                            <input type="checkbox"
+                                                   class="form-check-input"
+                                                   id="selectAll">
+                                            <label class="form-check-label" for="selectAll">
+                                                <i class="fas fa-check-square"></i>
+                                            </label>
+                                        </div>
+                                    </th>
+                                    <th>
+                                        <i class="fas fa-folder me-1"></i>
+                                        Categoria
+                                    </th>
+                                    <th>
+                                        <i class="fas fa-file me-1"></i>
+                                        Tipo
+                                    </th>
+                                    <th>
+                                        <i class="fas fa-signature me-1"></i>
+                                        Documento
+                                    </th>
+                                    <th>
+                                        <i class="fas fa-calendar me-1"></i>
+                                        Validade
+                                    </th>
+                                    <th>
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        Status
+                                    </th>
+                                    <th>
+                                        <i class="fas fa-user me-1"></i>
+                                        Criado por
+                                    </th>
+                                    <th style="width: 120px;">
+                                        <i class="fas fa-cogs me-1"></i>
+                                        Ações
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for documento in documentos %}
+                                <tr class="{{ documento.classe }}">
+                                    <td>
+                                        <div class="form-check">
+                                            <input type="checkbox"
+                                                   class="form-check-input"
+                                                   name="documentos[]"
+                                                   value="{{ documento.id }}">
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-primary">{{ documento.categoria }}</span>
+                                    </td>
+                                    <td>{{ documento.tipo }}</td>
+                                    <td>
+                                        <strong>{{ documento.nome }}</strong>
+                                    </td>
+                                    <td>{{ documento.validade }}</td>
+                                    <td>
+                                        {% if documento.status == 'vencido' %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-exclamation-triangle me-1"></i>
+                                                {{ documento.status_texto }}
+                                            </span>
+                                        {% elif documento.status == 'proximo' %}
+                                            <span class="badge bg-warning text-dark">
+                                                <i class="fas fa-clock me-1"></i>
+                                                {{ documento.status_texto }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>
+                                                {{ documento.status_texto }}
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ documento.criador }}</td>
+                                    <td>
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                                    type="button"
+                                                    id="acoesDropdown{{ documento.id }}"
+                                                    data-bs-toggle="dropdown"
+                                                    aria-expanded="false">
+                                                <i class="fas fa-ellipsis-v"></i>
+                                            </button>
+                                            <ul class="dropdown-menu" aria-labelledby="acoesDropdown{{ documento.id }}">
+                                                <li>
+                                                    <a class="dropdown-item atualizar-documento"
+                                                       href="#"
+                                                       data-id="{{ documento.id }}"
+                                                       data-nome="{{ documento.nome }}"
+                                                       data-validade="{{ documento.validade }}">
+                                                        <i class="fas fa-edit me-2"></i>
+                                                        Atualizar
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item"
+                                                       href="{{ url_for('download_documento', documento_id=documento.id) }}">
+                                                        <i class="fas fa-download me-2"></i>
+                                                        Download
+                                                    </a>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <a class="dropdown-item text-danger excluir-documento"
+                                                       href="#"
+                                                       data-id="{{ documento.id }}">
+                                                        <i class="fas fa-trash me-2"></i>
+                                                        Excluir
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </form>
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-file-alt fa-5x text-muted mb-3"></i>
+                    <h4 class="text-muted">Nenhum documento cadastrado</h4>
+                    <p class="text-muted">Comece adicionando seus primeiros documentos de habilitação.</p>
+                    <button type="button"
+                            class="btn btn-primary btn-lg"
+                            data-bs-toggle="modal"
+                            data-bs-target="#addDocumentoModal">
+                        <i class="fas fa-plus me-2"></i>
+                        Adicionar Primeiro Documento
+                    </button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Notificações -->
+    {% if documentos %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-warning text-dark">
+            <h3 class="mb-0">
+                <i class="fas fa-bell me-2"></i>
+                Notificações
+            </h3>
+        </div>
+        <div class="card-body">
+            <p class="mb-3">
+                <i class="fas fa-info-circle me-2"></i>
+                Receba alertas por email sobre documentos próximos do vencimento.
+            </p>
+            <a href="{{ url_for('notificar_documentos') }}"
+               class="btn btn-warning">
+                <i class="fas fa-envelope me-2"></i>
+                Enviar Notificações
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal para Adicionar Documento -->
+<div class="modal fade" id="addDocumentoModal" tabindex="-1" aria-labelledby="addDocumentoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('upload_documento') }}" enctype="multipart/form-data">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="fas fa-plus me-2"></i>
+                        Adicionar Documento
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="categoria" class="form-label fw-semibold">
+                                <i class="fas fa-folder text-muted me-2"></i>
+                                Categoria
+                            </label>
+                            <select class="form-select" id="categoria" name="categoria" required>
+                                <option value="">Selecione uma categoria</option>
+                                <option value="Fiscal">Fiscal</option>
+                                <option value="Trabalhista">Trabalhista</option>
+                                <option value="Societário">Societário</option>
+                                <option value="Outros">Outros</option>
+                                <option value="Habilitação Jurídica">Habilitação Jurídica</option>
+                                <option value="Regularidade Fiscal - Federal">Regularidade Fiscal - Federal</option>
+                                <option value="Regularidade Fiscal - Estadual">Regularidade Fiscal - Estadual</option>
+                                <option value="Regularidade Fiscal - Municipal">Regularidade Fiscal - Municipal</option>
+                                <option value="Qualificação Técnica">Qualificação Técnica</option>
+                                <option value="Qualificação Econômico-Financeira">Qualificação Econômico-Financeira</option>
+                                <option value="Documentos Específicos">Documentos Específicos</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="tipo" class="form-label fw-semibold">
+                                <i class="fas fa-file text-muted me-2"></i>
+                                Tipo
+                            </label>
+                            <select class="form-select" id="tipo" name="tipo" required>
+                                <option value="">Selecione uma categoria primeiro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="nome" class="form-label fw-semibold">
+                            <i class="fas fa-signature text-muted me-2"></i>
+                            Nome do Documento
+                        </label>
+                        <input type="text"
+                               class="form-control"
+                               id="nome"
+                               name="nome"
+                               placeholder="Digite o nome do documento"
+                               required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="validade" class="form-label fw-semibold">
+                            <i class="fas fa-calendar text-muted me-2"></i>
+                            Data de Validade
+                        </label>
+                        <input type="date"
+                               class="form-control"
+                               id="validade"
+                               name="validade"
+                               required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="arquivo" class="form-label fw-semibold">
+                            <i class="fas fa-upload text-muted me-2"></i>
+                            Arquivo
+                        </label>
+                        <input type="file"
+                               class="form-control"
+                               id="arquivo"
+                               name="arquivo"
+                               accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                               required>
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Formatos aceitos: PDF, DOC, DOCX, JPG, JPEG, PNG
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-2"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-2"></i>
+                        Salvar Documento
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Atualizar Documento -->
+<div class="modal fade" id="editDocumentoModal" tabindex="-1" aria-labelledby="editDocumentoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form id="formAtualizarDocumento" method="POST" action="{{ url_for('atualizar_documento') }}" enctype="multipart/form-data">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title">
+                        <i class="fas fa-edit me-2"></i>
+                        Atualizar Documento
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editDocumentoId" name="documento_id">
+
+                    <div class="mb-3">
+                        <label for="editNome" class="form-label fw-semibold">
+                            <i class="fas fa-signature text-muted me-2"></i>
+                            Nome do Documento
+                        </label>
+                        <input type="text"
+                               class="form-control"
+                               id="editNome"
+                               name="nome"
+                               readonly
+                               style="background-color: #f8f9fa;">
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            O nome do documento não pode ser alterado
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="editValidade" class="form-label fw-semibold">
+                            <i class="fas fa-calendar text-muted me-2"></i>
+                            Nova Data de Validade
+                        </label>
+                        <input type="date"
+                               class="form-control"
+                               id="editValidade"
+                               name="validade"
+                               required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="editArquivo" class="form-label fw-semibold">
+                            <i class="fas fa-upload text-muted me-2"></i>
+                            Novo Arquivo <span class="text-danger">(obrigatório)</span>
+                        </label>
+                        <input type="file"
+                               class="form-control"
+                               id="editArquivo"
+                               name="arquivo"
+                               accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                               required>
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Formatos aceitos: PDF, DOC, DOCX, JPG, JPEG, PNG
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-2"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-save me-2"></i>
+                        Salvar Alterações
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0,123,255,0.1);
+}
+
+.btn {
+    transition: all 0.2s ease-in-out;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.badge {
+    font-size: 0.875rem;
+}
+
+.form-text {
+    font-size: 0.875rem;
+}
+
+.card-header {
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+}
+
+.form-label.fw-semibold {
+    color: #495057;
+    margin-bottom: 0.5rem;
+}
+
+.text-muted {
+    opacity: 0.7;
+}
+
+.dropdown-menu {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.form-check-input:checked {
+    background-color: #667eea;
+    border-color: #667eea;
+}
+
+.modal-content {
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const categoriaSelect = document.getElementById('categoria');
+    const tipoSelect = document.getElementById('tipo');
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const downloadSelecionados = document.getElementById('downloadSelecionados');
+    const formSelecionarDocumentos = document.getElementById('formSelecionarDocumentos');
+
+    // Atualiza os tipos ao selecionar uma categoria
+    if (categoriaSelect) {
+        categoriaSelect.addEventListener('change', function () {
+            const categoria = this.value;
+            tipoSelect.innerHTML = '<option value="">Carregando...</option>';
+
+            if (!categoria) {
+                tipoSelect.innerHTML = '<option value="">Selecione uma categoria primeiro</option>';
+                return;
+            }
+
+            fetch("{{ url_for('tipos_documento') }}?categoria=" + encodeURIComponent(categoria), {
+                credentials: 'include'
+            })
+            .then(response => {
+                if (response.redirected) {
+                    console.warn("Usuário não autenticado. Redirecionando para login...");
+                    alert("Sua sessão expirou. Faça login novamente.");
+                    window.location.href = response.url;
+                    return;
+                }
+                if (!response.ok) {
+                    throw new Error("Erro ao buscar tipos de documentos. Código: " + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (!data || data.error) {
+                    alert(data.error || "Erro desconhecido ao buscar tipos de documentos.");
+                    return;
+                }
+
+                tipoSelect.innerHTML = '<option value="">Selecione um tipo</option>' +
+                    data.tipos.map(tipo => `<option value="${tipo}">${tipo}</option>`).join('');
+            })
+            .catch(error => {
+                console.error('Erro ao buscar tipos de documentos:', error);
+                tipoSelect.innerHTML = '<option value="">Erro ao carregar tipos</option>';
+                alert('Erro ao buscar tipos de documentos. Tente novamente.');
+            });
+        });
+    }
+
+    // Selecionar ou desmarcar todos os checkboxes
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('click', function () {
+            document.querySelectorAll('input[name="documentos[]"]').forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+        });
+    }
+
+    // Baixar documentos selecionados
+    if (downloadSelecionados) {
+        downloadSelecionados.addEventListener('click', function (event) {
+            const selected = document.querySelectorAll('input[name="documentos[]"]:checked');
+            if (selected.length === 0) {
+                alert("Nenhum documento selecionado!");
+                event.preventDefault();
+            } else {
+                formSelecionarDocumentos.submit();
+            }
+        });
+    }
+
+    // Atualizar Documento: abrir o modal com dados preenchidos
+    document.querySelectorAll('.atualizar-documento').forEach(button => {
+        button.addEventListener('click', function (e) {
+            e.preventDefault();
+            const documentoId = this.getAttribute('data-id');
+            const nome = this.getAttribute('data-nome');
+            const validade = this.getAttribute('data-validade');
+
+            document.getElementById('editDocumentoId').value = documentoId;
+            document.getElementById('editNome').value = nome;
+
+            // Converter data de dd/mm/yyyy para yyyy-mm-dd
+            const validadeParts = validade.split('/');
+            if (validadeParts.length === 3) {
+                const validadeFormatted = `${validadeParts[2]}-${validadeParts[1]}-${validadeParts[0]}`;
+                document.getElementById('editValidade').value = validadeFormatted;
+            }
+
+            var modal = new bootstrap.Modal(document.getElementById('editDocumentoModal'));
+            modal.show();
+        });
+    });
+
+    // Excluir documento via API
+    document.querySelectorAll('.excluir-documento').forEach(button => {
+        button.addEventListener('click', function (e) {
+            e.preventDefault();
+            const documentoId = this.getAttribute('data-id');
+
+            if (!confirm("Tem certeza que deseja excluir este documento? Esta ação não pode ser desfeita.")) {
+                return;
+            }
+
+            // Mostrar loading
+            const originalText = this.innerHTML;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Excluindo...';
+            this.classList.add('disabled');
+
+            fetch("{{ url_for('excluir_documento', documento_id=0) }}".replace("0", documentoId), {
+                method: 'DELETE',
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Documento excluído com sucesso!");
+                    location.reload();
+                } else {
+                    alert("Erro ao excluir documento: " + data.error);
+                    this.innerHTML = originalText;
+                    this.classList.remove('disabled');
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao excluir documento:', error);
+                alert("Erro ao excluir documento. Tente novamente.");
+                this.innerHTML = originalText;
+                this.classList.remove('disabled');
+            });
+        });
+    });
+
+    // Validação de formulários
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+        form.addEventListener('submit', function(e) {
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                const originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processando...';
+
+                // Reabilitar após 5 segundos para evitar travamento
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                }, 5000);
+            }
+        });
+    });
+});
+</script>
+
+{% endblock %}
+

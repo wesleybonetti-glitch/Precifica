@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Documentos{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="text-center">Documentos</h1>
+    <p class="text-center">Visualize e gerencie seus documentos cadastrados.</p>
+
+    {% if documentos %}
+        <table class="table table-striped mt-4">
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Status</th>
+                    <th>Última Atualização</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for documento in documentos %}
+                    <tr>
+                        <td>{{ documento.nome }}</td>
+                        <td>{{ documento.status }}</td>
+                        <td>{{ documento.data_atualizacao.strftime('%d/%m/%Y %H:%M') if documento.data_atualizacao else "N/A" }}</td>
+                        <td>
+                            {% if documento.arquivo %}
+                                <a href="{{ url_for('static', filename=documento.arquivo) }}" class="btn btn-sm btn-success" target="_blank">Baixar</a>
+                            {% else %}
+                                <form action="{{ url_for('upload_documento') }}" method="POST" enctype="multipart/form-data" class="d-inline">
+                                    <input type="hidden" name="documento_id" value="{{ documento.id }}">
+                                    <input type="file" name="arquivo" class="form-control-file mb-2" required>
+                                    <button type="submit" class="btn btn-sm btn-primary">Enviar</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-center text-muted">Nenhum documento encontrado.</p>
+    {% endif %}
+</div>
+{% endblock %}

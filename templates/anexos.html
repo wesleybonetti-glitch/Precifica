@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+
+{% block title %}Anexos e Declarações{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header com Gradiente -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-lg" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="card-body text-white">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h1 class="mb-2">
+                                <i class="fas fa-file-alt me-3"></i>
+                                Anexos e Declarações
+                            </h1>
+                            <p class="mb-0 opacity-75">
+                                Gerencie e gere documentos em conformidade com a Lei nº 14.133/2021
+                            </p>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <div class="d-flex align-items-center justify-content-end">
+                                <span class="badge bg-light text-dark fs-6 me-3">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Conformidade Legal
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h2 class="mb-0">
+                <i class="fas fa-list-alt me-2"></i>
+                Seleção de Licitação
+            </h2>
+        </div>
+        <div class="card-body">
+            {% if licitacoes %}
+                <p class="text-center text-success">Foram carregadas {{ licitacoes|length }} licitações.</p>
+
+                <form id="formAnexos" method="POST" action="{{ url_for('gerar_anexos') }}" target="_blank">
+                    <div class="mb-3">
+                        <label for="searchLicitacao" class="form-label fw-semibold">
+                            <i class="fas fa-filter text-muted me-2"></i>
+                            Filtrar Licitação:
+                        </label>
+                        <input type="text" class="form-control" id="searchLicitacao" placeholder="Digite para buscar...">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="licitacao" class="form-label fw-semibold">
+                            <i class="fas fa-hand-pointer text-muted me-2"></i>
+                            Selecione a Licitação:
+                        </label>
+                        <select class="form-select" name="licitacao_id" id="licitacao" required>
+                            <option value="" disabled selected>Escolha uma licitação...</option>
+                            {% for licitacao in licitacoes %}
+                                <option value="{{ licitacao.tipo }}|{{ licitacao.id }}">
+                                    {{ licitacao.tipo }} | ID: {{ licitacao.id }} | {{ licitacao.razao_social }} | Processo: {{ licitacao.numero_processo }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <hr>
+
+                    <!-- Seção de Declaração Manual Aprimorada -->
+                    <div class="card mb-4 border-warning">
+                        <div class="card-header bg-warning text-dark">
+                            <h3 class="mb-0">
+                                <i class="fas fa-edit me-2"></i>
+                                Declaração Manual
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <!-- Campo para Título da Declaração -->
+                                    <div class="mb-3">
+                                        <label for="tituloDeclaracao" class="form-label fw-semibold">
+                                            <i class="fas fa-heading text-muted me-2"></i>
+                                            Título da Declaração:
+                                        </label>
+                                        <input
+                                            type="text"
+                                            class="form-control"
+                                            id="tituloDeclaracao"
+                                            placeholder="Ex: DECLARAÇÃO DE CONFORMIDADE"
+                                            value="DECLARAÇÃO"
+                                            maxlength="100"
+                                        >
+                                        <small class="form-text text-muted">
+                                            Este título aparecerá no cabeçalho do PDF.
+                                        </small>
+                                    </div>
+
+                                    <!-- Campo para Texto da Declaração -->
+                                    <div class="mb-3">
+                                        <label for="textoDeclaracao" class="form-label fw-semibold">
+                                            <i class="fas fa-pen text-muted me-2"></i>
+                                            Digite sua declaração:
+                                        </label>
+                                        <textarea
+                                            class="form-control"
+                                            id="textoDeclaracao"
+                                            rows="6"
+                                            placeholder="Digite aqui o texto da sua declaração personalizada..."
+                                            style="resize: vertical; min-height: 150px;"
+                                        >que está em conformidade com todas as exigências legais e regulamentares aplicáveis ao objeto licitado, comprometendo-se a cumprir integralmente as obrigações assumidas, conforme estabelecido no edital e na legislação vigente.</textarea>
+                                        <small class="form-text text-muted">
+                                            O texto será automaticamente inserido no formato padrão da empresa.
+                                        </small>
+                                    </div>
+
+                                    <!-- Informações do Endereçamento -->
+                                    <div class="alert alert-info" id="infoEnderecamento" style="display: none;">
+                                        <h6><i class="fas fa-info-circle me-2"></i>Endereçamento da Declaração:</h6>
+                                        <p class="mb-1"><strong>Destinatário:</strong> <span id="orgaoLicitante">-</span></p>
+                                        <p class="mb-0"><strong>Endereço:</strong> <span id="enderecoOrgao">-</span></p>
+                                    </div>
+
+                                    <div class="mt-3">
+                                        <button type="button" class="btn btn-info me-2" id="btnPreview">
+                                            <i class="fas fa-eye me-1"></i>
+                                            Visualizar Preview
+                                        </button>
+                                        <button type="button" class="btn btn-success" id="btnDownloadManual">
+                                            <i class="fas fa-download me-1"></i>
+                                            Download PDF
+                                        </button>
+                                        <button type="button" class="btn btn-secondary" id="btnPrintManual">
+                                            <i class="fas fa-print me-1"></i>
+                                            Imprimir
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">
+                                        <i class="fas fa-file-pdf text-muted me-2"></i>
+                                        Preview do PDF:
+                                    </label>
+                                    <div id="pdfPreviewContainer" class="border rounded" style="height: 450px; overflow: auto;">
+                                        <div class="d-flex align-items-center justify-content-center h-100 text-muted">
+                                            <div class="text-center">
+                                                <i class="fas fa-file-pdf fa-3x mb-3"></i>
+                                                <p>Selecione uma licitação e digite uma declaração para ver o preview</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="loadingPreview" class="text-center mt-2" style="display: none;">
+                                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                            <span class="visually-hidden">Carregando...</span>
+                                        </div>
+                                        <span class="ms-2">Gerando preview...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h3 class="text-center mb-3">
+                        <i class="fas fa-check-square me-2"></i>
+                        Selecione as Declarações Pré-definidas:
+                    </h3>
+
+                    <div class="row">
+                        {% for chave, texto in {
+                            'inexistencia': "Declaração de Inexistência de Fatos Impeditivos",
+                            'requisitos': "Declaração de Cumprimento dos Requisitos de Habilitação",
+                            'nao_menor': "Declaração de Não Emprego de Menor",
+                            'independente': "Declaração de Elaboração Independente de Proposta",
+                            'micro_pequena': "Declaração de Enquadramento ME/EPP",
+                            'regularidade': "Declaração de Regularidade Fiscal e Trabalhista",
+                            'cumprimento': "Declaração de Responsabilidade pelo Cumprimento do Contrato",
+                            'lei_anticorrupcao': "Declaração de Atendimento à Lei Anticorrupção",
+                            'meio_ambiente': "Declaração de Comprometimento com o Meio Ambiente",
+                            'nao_servidor_publico': "Declaração de Não Possuir Servidor Público Ativo no Quadro Societário",
+                            'visita_local': "Declaração de Visita ao Local da Obra",
+                            'processo_selecao': "Declaração de Atendimento ao Processo de Seleção",
+                            'inexistencia_parentesco': "Declaração de Inexistência de Parentesco",
+                            'declaracao_unificada': "Declaração Unificada de Regularidade e Conformidade",
+                            'pcd_menos_100': "Declaração de Cumprimento da Reserva Legal de Cargos para Pessoas com Deficiência e Reabilitados (Empresa com menos de 100 empregados)",
+                            'pcd_100_ou_mais': "Declaração de Cumprimento da Reserva Legal de Cargos para Pessoas com Deficiência e Reabilitados (Empresa com 100 ou mais empregados)",
+                            'simples_nacional':  "Enquadramento no Simples Nacional",
+                        }.items() %}
+                            <div class="col-md-6 col-lg-4 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="anexos" value="{{ chave }}" id="{{ chave }}">
+                                    <label class="form-check-label" for="{{ chave }}">{{ texto }}</label>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="d-grid mt-4">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-file-export me-2"></i>
+                            Gerar Selecionados
+                        </button>
+                    </div>
+                </form>
+            {% else %}
+                <div class="alert alert-warning text-center">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Nenhuma licitação disponível. Adicione uma licitação para gerar documentos.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Scripts necessários -->
+<script>
+    // Validação antes do envio: garantir que pelo menos uma declaração seja selecionada
+    document.getElementById("formAnexos").addEventListener("submit", function(event) {
+        const checkboxes = document.querySelectorAll("input[name=\"anexos\"]:checked");
+        if (checkboxes.length === 0) {
+            alert("Por favor, selecione pelo menos uma declaração.");
+            event.preventDefault();
+        }
+    });
+
+    // Filtragem dinâmica no select de licitações conforme digitação
+    document.addEventListener("DOMContentLoaded", function () {
+        let searchInput = document.getElementById("searchLicitacao");
+        let select = document.getElementById("licitacao");
+
+        searchInput.addEventListener("input", function () {
+            let searchTerm = searchInput.value.toLowerCase();
+
+            for (let option of select.options) {
+                let text = option.text.toLowerCase();
+                option.hidden = !text.includes(searchTerm);
+            }
+        });
+
+        // Funcionalidade da Declaração Manual Aprimorada
+        const btnPreview = document.getElementById('btnPreview');
+        const btnDownloadManual = document.getElementById('btnDownloadManual');
+        const btnPrintManual = document.getElementById('btnPrintManual');
+        const tituloDeclaracao = document.getElementById('tituloDeclaracao');
+        const textoDeclaracao = document.getElementById('textoDeclaracao');
+        const pdfPreviewContainer = document.getElementById('pdfPreviewContainer');
+        const loadingPreview = document.getElementById('loadingPreview');
+        const licitacaoSelect = document.getElementById('licitacao');
+        const infoEnderecamento = document.getElementById('infoEnderecamento');
+        const orgaoLicitante = document.getElementById('orgaoLicitante');
+        const enderecoOrgao = document.getElementById('enderecoOrgao');
+
+        // Função para gerar preview
+        function gerarPreview() {
+            const titulo = tituloDeclaracao.value.trim() || 'DECLARAÇÃO';
+            const texto = textoDeclaracao.value.trim();
+
+            if (!texto) {
+                alert('Por favor, digite o texto da declaração antes de gerar o preview.');
+                return;
+            }
+
+            if (!licitacaoSelect.value) {
+                alert('Por favor, selecione uma licitação antes de gerar o preview.');
+                return;
+            }
+
+            // Mostrar loading
+            loadingPreview.style.display = 'block';
+            pdfPreviewContainer.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100"><div class="spinner-border text-primary" role="status"></div></div>';
+
+            // Dados para enviar
+            const dados = {
+                titulo_declaracao: titulo,
+                texto_declaracao: texto,
+                licitacao_id: licitacaoSelect.value
+            };
+
+            // Fazer requisição para gerar preview
+            fetch('/precificaja/anexos/gerar_manual', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(dados)
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingPreview.style.display = 'none';
+
+                if (data.success) {
+                    // Exibir PDF no iframe
+                    const iframe = document.createElement('iframe');
+                    iframe.src = 'data:application/pdf;base64,' + data.pdf_base64;
+                    iframe.style.width = '100%';
+                    iframe.style.height = '100%';
+                    iframe.style.border = 'none';
+
+                    pdfPreviewContainer.innerHTML = '';
+                    pdfPreviewContainer.appendChild(iframe);
+
+                    // Atualizar informações do endereçamento
+                    if (data.orgao_licitante) {
+                        orgaoLicitante.textContent = data.orgao_licitante;
+                        enderecoOrgao.textContent = data.endereco_orgao || 'Endereço não informado';
+                        infoEnderecamento.style.display = 'block';
+                    }
+                } else {
+                    pdfPreviewContainer.innerHTML = '<div class="alert alert-danger m-3">Erro: ' + data.error + '</div>';
+                }
+            })
+            .catch(error => {
+                loadingPreview.style.display = 'none';
+                pdfPreviewContainer.innerHTML = '<div class="alert alert-danger m-3">Erro ao gerar preview: ' + error.message + '</div>';
+                console.error('Erro:', error);
+            });
+        }
+
+        btnPreview.addEventListener('click', gerarPreview);
+
+        // Função para download
+        btnDownloadManual.addEventListener('click', function() {
+            const titulo = tituloDeclaracao.value.trim() || 'DECLARAÇÃO';
+            const texto = textoDeclaracao.value.trim();
+
+            if (!texto) {
+                alert('Por favor, digite o texto da declaração antes de fazer o download.');
+                return;
+            }
+
+            if (!licitacaoSelect.value) {
+                alert('Por favor, selecione uma licitação antes de fazer o download.');
+                return;
+            }
+
+            const dados = {
+                titulo_declaracao: titulo,
+                texto_declaracao: texto,
+                licitacao_id: licitacaoSelect.value
+            };
+
+            // Criar um link temporário para download
+            fetch('/precificaja/anexos/download_manual', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(dados)
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.blob();
+                }
+                throw new Error('Erro ao gerar PDF para download');
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = titulo.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() + '.pdf';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            })
+            .catch(error => {
+                alert('Erro ao fazer download: ' + error.message);
+                console.error('Erro:', error);
+            });
+        });
+
+        // Função para imprimir
+        btnPrintManual.addEventListener('click', function() {
+            const iframe = pdfPreviewContainer.querySelector('iframe');
+
+            if (!iframe) {
+                alert('Por favor, gere o preview primeiro antes de imprimir.');
+                return;
+            }
+
+            // Tentar imprimir o conteúdo do iframe
+            try {
+                iframe.contentWindow.print();
+            } catch (error) {
+                // Fallback: abrir em nova janela para impressão
+                const newWindow = window.open(iframe.src);
+                newWindow.onload = function() {
+                    newWindow.print();
+                };
+            }
+        });
+
+        // Auto-preview quando o usuário para de digitar (debounce)
+        let timeoutId;
+        function autoPreview() {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(function() {
+                if (textoDeclaracao.value.trim() && licitacaoSelect.value) {
+                    gerarPreview();
+                }
+            }, 1500); // Aguarda 1.5 segundos após parar de digitar
+        }
+
+        textoDeclaracao.addEventListener('input', autoPreview);
+        tituloDeclaracao.addEventListener('input', autoPreview);
+        licitacaoSelect.addEventListener('change', function() {
+            if (textoDeclaracao.value.trim()) {
+                gerarPreview();
+            }
+        });
+    });
+</script>
+
+{% endblock %}
+

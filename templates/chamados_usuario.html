@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block title %}Meus Chamados{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="alert alert-warning" role="alert">
+        ⚠️ Atenção: Cada chamado pode levar até 24 horas para ser respondido, apenas de segunda a sexta-feira.
+    </div>
+
+    <h3 class="mb-3">Meus Chamados de Suporte</h3>
+
+    <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#abrirChamadoModal">
+        <i class="fas fa-plus"></i> Abrir Chamado
+    </button>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h4 class="text-danger">Chamados Abertos</h4>
+            <table class="table table-bordered table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Título</th>
+                        <th>Data</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for chamado in chamados if chamado.status == 'Aberto' %}
+                    <tr>
+                        <td>{{ chamado.id }}</td>
+                        <td>{{ chamado.titulo }}</td>
+                        <td>{{ chamado.data_criacao.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td>
+                            <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#verChamadoModal{{ chamado.id }}">
+                                <i class="fas fa-eye"></i> Ver
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="col-md-6">
+            <h4 class="text-warning">Chamados em Processo</h4>
+            <table class="table table-bordered table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Título</th>
+                        <th>Data</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for chamado in chamados if chamado.status == 'Em processo' %}
+                    <tr>
+                        <td>{{ chamado.id }}</td>
+                        <td>{{ chamado.titulo }}</td>
+                        <td>{{ chamado.data_criacao.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td>
+                            <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#verChamadoModal{{ chamado.id }}">
+                                <i class="fas fa-eye"></i> Ver
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <h4 class="text-success mt-4">Chamados Finalizados</h4>
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Título</th>
+                <th>Data</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chamado in chamados if chamado.status == 'Finalizado' %}
+            <tr>
+                <td>{{ chamado.id }}</td>
+                <td>{{ chamado.titulo }}</td>
+                <td>{{ chamado.data_criacao.strftime('%d/%m/%Y %H:%M') }}</td>
+                <td>
+                    <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#verChamadoModal{{ chamado.id }}">
+                        <i class="fas fa-eye"></i> Ver
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% for chamado in chamados %}
+    <div class="modal fade" id="verChamadoModal{{ chamado.id }}" tabindex="-1" aria-labelledby="verChamadoModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title" id="verChamadoModalLabel">Detalhes do Chamado #{{ chamado.id }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <p><strong>Título:</strong> {{ chamado.titulo }}</p>
+                    <p><strong>Descrição:</strong> {{ chamado.descricao }}</p>
+                    <p><strong>Status:</strong> {{ chamado.status }}</p>
+
+                    <h5 class="mt-3">Histórico de Conversa</h5>
+                    <div class="timeline border rounded p-3">
+                        {% for resposta in chamado.respostas %}
+    <div class="mb-2 p-2 {% if resposta.autor == 'atendente' %} bg-light {% else %} bg-white {% endif %} border rounded">
+        <p><strong>{{ resposta.autor|capitalize }}:</strong> {{ resposta.mensagem }}</p>
+        {% if resposta.anexo %}
+        <p>
+            <strong>Anexo:</strong>
+            <a href="{{ url_for('ver_anexo_resposta', filename=resposta.anexo) }}" target="_blank">
+                <button class="btn btn-sm btn-outline-primary">Ver Anexo</button>
+            </a>
+        </p>
+        {% endif %}
+        <small class="text-muted">{{ resposta.data.strftime('%d/%m/%Y %H:%M') }}</small>
+    </div>
+{% endfor %}
+                    </div>
+
+                    {% if chamado.anexo %}
+                    <p><strong>Anexo:</strong>
+                        <a href="{{ url_for('ver_anexo', filename=chamado.anexo.split('/')[-1]) }}" target="_blank">
+                            <button class="btn btn-outline-primary btn-sm">Ver Anexo</button>
+                        </a>
+                    </p>
+                    {% endif %}
+
+                    <form action="{{ url_for('responder_chamado') }}" method="post" enctype="multipart/form-data">
+                        <input type="hidden" name="chamado_id" value="{{ chamado.id }}">
+
+                        <div class="mb-3">
+                            <label for="nova_resposta" class="form-label">Adicionar Resposta:</label>
+                            <textarea class="form-control" id="nova_resposta" name="nova_resposta" rows="3" required></textarea>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="anexo_resposta" class="form-label">Anexo da Resposta (opcional - PDF/Imagem):</label>
+                            <input type="file" class="form-control" id="anexo_resposta" name="anexo_resposta" accept=".pdf,.jpg,.jpeg,.png">
+                        </div>
+
+                        <button type="submit" class="btn btn-success">Responder</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Modal para abrir novo chamado -->
+    <div class="modal fade" id="abrirChamadoModal" tabindex="-1" aria-labelledby="abrirChamadoModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ url_for('abrir_chamado') }}" method="post" enctype="multipart/form-data">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title" id="abrirChamadoModalLabel">Abrir Novo Chamado</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="titulo" class="form-label">Título</label>
+                            <input type="text" class="form-control" name="titulo" id="titulo" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="descricao" class="form-label">Descrição</label>
+                            <textarea class="form-control" name="descricao" id="descricao" rows="4" required></textarea>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="anexo" class="form-label">Anexo (opcional - PDF/Imagem)</label>
+                            <input type="file" class="form-control" name="anexo" id="anexo" accept=".pdf,.jpg,.jpeg,.png">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary">Abrir Chamado</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,2176 @@
+{% extends "base.html" %}
+
+{% block title %}Produtos e Fornecedores{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body bg-gradient-primary text-white rounded">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <h2 class="mb-1"><i class="fas fa-boxes me-2"></i>Gerenciamento de Produtos</h2>
+                            <p class="mb-0 opacity-75">Gerencie produtos, fornecedores e catálogos</p>
+                        </div>
+                        <div class="text-end">
+                            <div class="badge bg-light text-primary fs-6">
+                                <i class="fas fa-cube me-1"></i>
+                                <span id="total-produtos">{{ paginacao.total }}</span> Produtos
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Estatísticas -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="text-primary mb-2">
+                        <i class="fas fa-boxes fa-2x"></i>
+                    </div>
+                    <h5 class="card-title">Total de Produtos</h5>
+                    <h3 class="text-primary mb-0" id="stat-total">{{ paginacao.total }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="text-success mb-2">
+                        <i class="fas fa-camera fa-2x"></i>
+                    </div>
+                    <h5 class="card-title">Com Fotos</h5>
+                    <h3 class="text-success mb-0" id="stat-fotos">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="text-info mb-2">
+                        <i class="fas fa-file-alt fa-2x"></i>
+                    </div>
+                    <h5 class="card-title">Com Descrições</h5>
+                    <h3 class="text-info mb-0" id="stat-descricoes">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="text-warning mb-2">
+                        <i class="fas fa-check-square fa-2x"></i>
+                    </div>
+                    <h5 class="card-title">Selecionados</h5>
+                    <h3 class="text-warning mb-0" id="stat-selecionados">0</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Botões de Ação -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalProduto">
+                                    <i class="fas fa-plus me-1"></i>Cadastrar Produto
+                                </button>
+                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalFornecedor">
+                                    <i class="fas fa-building me-1"></i>Cadastrar Fornecedor
+                                </button>
+                                <button class="btn btn-info" onclick="abrirGerenciarFornecedores()">
+                                    <i class="fas fa-cogs me-1"></i>Gerenciar Fornecedores
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-6 text-end">
+                            <div class="btn-group" role="group">
+                                <a href="/precificaja/download_modelo_csv" class="btn btn-outline-info">
+                                    <i class="fas fa-download me-1"></i>Modelo CSV
+                                </a>
+                                <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalImportarCSV">
+                                    <i class="fas fa-upload me-1"></i>Importar CSV
+                                </button>
+                                <a href="/precificaja/produtos_fornecedores/baixar_planilha" class="btn btn-outline-dark">
+                                    <i class="fas fa-file-csv me-1"></i>Baixar CSV
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botões de Catálogo -->
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="d-flex gap-2 justify-content-center">
+                                <button class="btn btn-outline-success" onclick="gerarCatalogoTodos()">
+                                    <i class="fas fa-file-pdf me-1"></i>Catálogo Completo
+                                </button>
+                                <button class="btn btn-outline-warning" id="btn-catalogo-selecionados" onclick="gerarCatalogoSelecionados()" disabled>
+                                    <i class="fas fa-file-pdf me-1"></i>Catálogo Selecionados (<span id="count-selecionados">0</span>)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ações em Massa -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-2 justify-content-center">
+                        <button class="btn btn-danger" onclick="excluirSelecionados()" id="btn-excluir-selecionados" disabled>
+                            <i class="fas fa-trash-alt me-1"></i>Excluir Selecionados
+                        </button>
+                        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalExcluirPorFornecedor">
+                            <i class="fas fa-user-slash me-1"></i>Excluir por Fornecedor
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="excluirTodos()">
+                            <i class="fas fa-trash me-1"></i>Excluir TODOS os Produtos
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Buscar Produto</label>
+                            <input type="text" class="form-control" id="filtro-produto" placeholder="Nome, marca ou modelo..." value="{{ filtros.busca or '' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fornecedor</label>
+                            <select class="form-select" id="filtro-fornecedor">
+                                <option value="">Todos</option>
+                                {% for fornecedor in fornecedores %}
+                                <option value="{{ fornecedor.id }}" {% if filtros.fornecedor_id == fornecedor.id %}selected{% endif %}>{{ fornecedor.nome_empresa }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Status</label>
+                            <select class="form-select" id="filtro-status">
+                                <option value="">Todos</option>
+                                <option value="com-foto" {% if filtros.status == 'com-foto' %}selected{% endif %}>Com Foto</option>
+                                <option value="sem-foto" {% if filtros.status == 'sem-foto' %}selected{% endif %}>Sem Foto</option>
+                                <option value="com-descricao" {% if filtros.status == 'com-descricao' %}selected{% endif %}>Com Descrição</option>
+                                <option value="sem-descricao" {% if filtros.status == 'sem-descricao' %}selected{% endif %}>Sem Descrição</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end gap-2">
+                            <button class="btn btn-outline-secondary" onclick="limparFiltros()">
+                                <i class="fas fa-times me-1"></i>Limpar
+                            </button>
+                            <button class="btn btn-primary" onclick="aplicarFiltros()">
+                                <i class="fas fa-search me-1"></i>Filtrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela de Produtos -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-list me-2"></i>Lista de Produtos
+                        </h5>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="select-all" onchange="toggleSelectAll()">
+                            <label class="form-check-label" for="select-all">
+                                Selecionar Todos
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="tabela-produtos">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="50">
+                                        <i class="fas fa-check-square"></i>
+                                    </th>
+                                    <th width="80">Foto</th>
+                                    <th>Produto</th>
+                                    <th>Marca/Modelo</th>
+                                    <th>Unidade</th>
+                                    <th>Custo</th>
+                                    <th>Fornecedor</th>
+                                    <th>Status</th>
+                                    <th width="250">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="produtos-tbody">
+                                {% for produto in produtos %}
+                                <tr data-produto-id="{{ produto.id }}" data-fornecedor-id="{{ produto.fornecedor_id or '' }}">
+                                    <td>
+                                        <input type="checkbox" class="form-check-input produto-checkbox"
+                                               value="{{ produto.id }}" onchange="updateSelecao()">
+                                    </td>
+                                    <td>
+                                        <div class="foto-preview" style="width: 50px; height: 50px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #eee; border-radius: 5px;">
+                                            {% if produto.foto_url %}
+                                                <img src="{{ produto.foto_url }}" alt="Foto do produto" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                                            {% else %}
+                                                <i class="fas fa-image text-muted" style="font-size: 20px;"></i>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <strong>{{ produto.nome }}</strong>
+                                    </td>
+                                    <td>
+                                        <div>
+                                            <small class="text-muted">Marca:</small> {{ produto.marca or 'N/A' }}<br>
+                                            <small class="text-muted">Modelo:</small> {{ produto.modelo or 'N/A' }}
+                                        </div>
+                                    </td>
+                                    <td>{{ produto.unidade_medida or 'N/A' }}</td>
+                                    <td>
+                                        <span class="badge bg-success">
+                                            R$ {{ "%.2f"|format(produto.custo or 0) }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if produto.fornecedor_nome and produto.fornecedor_nome != 'Sem fornecedor' %}
+                                            <span class="badge bg-primary">{{ produto.fornecedor_nome }}</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="d-flex gap-1">
+                                            {% if produto.tem_foto %}
+                                                <span class="badge bg-success text-white status-foto">
+                                                    <i class="fas fa-camera"></i>
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-light text-dark status-foto">
+                                                    <i class="fas fa-camera"></i>
+                                                </span>
+                                            {% endif %}
+
+                                            {% if produto.tem_descricao %}
+                                                <span class="badge bg-info text-white status-descricao">
+                                                    <i class="fas fa-file-alt"></i>
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-light text-dark status-descricao">
+                                                    <i class="fas fa-file-alt"></i>
+                                                </span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button class="btn btn-outline-primary" onclick="editarProduto({{ produto.id }}, '{{ produto.nome|replace("'", "\\'") }}', '{{ produto.marca|replace("'", "\\'") }}', '{{ produto.modelo|replace("'", "\\'") }}', '{{ produto.unidade_medida|replace("'", "\\'") }}', {{ produto.custo or 0 }}, {{ produto.fornecedor_id or 'null' }})" title="Editar">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn btn-outline-info" onclick="abrirModalDetalhes({{ produto.id }}, '{{ produto.nome|replace("'", "\\'") }}')" title="Detalhes/Gerenciar">
+                                                <i class="fas fa-cog"></i>
+                                            </button>
+                                            <button class="btn btn-outline-danger" onclick="excluirProduto({{ produto.id }}, '{{ produto.nome|replace("'", "\\'") }}')" title="Excluir">
+                                                <i class="fas fa-trash-alt"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="9" class="text-center py-4">
+                                        <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
+                                        <p class="text-muted">Nenhum produto encontrado com os filtros aplicados.</p>
+                                        <button class="btn btn-outline-primary" onclick="limparFiltros()">
+                                            <i class="fas fa-sync-alt me-1"></i>Limpar Filtros
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- Controles de Paginação -->
+                <div class="card-footer bg-light d-flex justify-content-between align-items-center flex-wrap">
+                    <div class="pagination-info mb-2 mb-md-0">
+                        Mostrando {{ paginacao.showing_start }} a {{ paginacao.showing_end }} de {{ paginacao.total }} produtos.
+                    </div>
+                    <nav aria-label="Paginação de produtos">
+                        <ul class="pagination mb-0">
+                            <li class="page-item {% if not paginacao.has_prev %}disabled{% endif %}">
+                                <a class="page-link" href="#" onclick="mudarPagina({{ paginacao.prev_num or 1 }})" aria-label="Anterior">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+                            {% for p in range(1, paginacao.pages + 1) %}
+                            <li class="page-item {% if p == paginacao.page %}active{% endif %}">
+                                <a class="page-link" href="#" onclick="mudarPagina({{ p }})">{{ p }}</a>
+                            </li>
+                            {% endfor %}
+                            <li class="page-item {% if not paginacao.has_next %}disabled{% endif %}">
+                                <a class="page-link" href="#" onclick="mudarPagina({{ paginacao.next_num or paginacao.pages }})" aria-label="Próximo">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                    <div class="mb-2 mb-md-0">
+                        <select class="form-select form-select-sm" id="per-page-select" onchange="mudarItensPorPagina(this.value)">
+                            <option value="10" {% if paginacao.per_page == 10 %}selected{% endif %}>10 por página</option>
+                            <option value="20" {% if paginacao.per_page == 20 %}selected{% endif %}>20 por página</option>
+                            <option value="50" {% if paginacao.per_page == 50 %}selected{% endif %}>50 por página</option>
+                            <option value="100" {% if paginacao.per_page == 100 %}selected{% endif %}>100 por página</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Cadastro de Produto -->
+<div class="modal fade" id="modalProduto" tabindex="-1" aria-labelledby="modalProdutoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="modalProdutoLabel">
+                    <i class="fas fa-plus me-2"></i>Cadastrar Novo Produto
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formProduto" action="/precificaja/produtos_fornecedores/cadastrar_produto" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" id="produto_id" name="produto_id">
+                    <div class="mb-3">
+                        <label for="nome" class="form-label">Nome do Produto *</label>
+                        <input type="text" class="form-control" id="nome" name="nome" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="marca" class="form-label">Marca</label>
+                                <input type="text" class="form-control" id="marca" name="marca">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="modelo" class="form-label">Modelo</label>
+                                <input type="text" class="form-control" id="modelo" name="modelo">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="unidade_medida" class="form-label">Unidade de Medida</label>
+                                <input type="text" class="form-control" id="unidade_medida" name="unidade_medida" value="UN">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="custo" class="form-label">Custo (R$)</label>
+                                <input type="number" step="0.01" class="form-control" id="custo" name="custo" value="0.00">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="fornecedor_id" class="form-label">Fornecedor</label>
+                        <select class="form-select" id="fornecedor_id" name="fornecedor_id">
+                            <option value="">Carregando fornecedores...</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success">Salvar Produto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Cadastro de Fornecedor -->
+<div class="modal fade" id="modalFornecedor" tabindex="-1" aria-labelledby="modalFornecedorLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="modalFornecedorLabel">
+                    <i class="fas fa-building me-2"></i>Cadastrar Novo Fornecedor
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formFornecedor" action="/precificaja/fornecedor_produtos/cadastrar" method="POST">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="cnpj" class="form-label">CNPJ *</label>
+                                <input type="text" class="form-control" id="cnpj" name="cnpj" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="nome_empresa" class="form-label">Nome da Empresa *</label>
+                                <input type="text" class="form-control" id="nome_empresa" name="nome_empresa" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="endereco" class="form-label">Endereço</label>
+                        <input type="text" class="form-control" id="endereco" name="endereco">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="atividade_principal" class="form-label">Atividade Principal</label>
+                        <input type="text" class="form-control" id="atividade_principal" name="atividade_principal">
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="contato" class="form-label">Contato</label>
+                                <input type="text" class="form-control" id="contato" name="contato">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="nome_vendedor" class="form-label">Nome do Vendedor</label>
+                                <input type="text" class="form-control" id="nome_vendedor" name="nome_vendedor">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="contato_vendedor" class="form-label">Contato do Vendedor</label>
+                        <input type="text" class="form-control" id="contato_vendedor" name="contato_vendedor">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="comentario" class="form-label">Comentários</label>
+                        <textarea class="form-control" id="comentario" name="comentario" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Fornecedor</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Gerenciamento de Fornecedores -->
+<div class="modal fade" id="modalGerenciarFornecedores" tabindex="-1" aria-labelledby="modalGerenciarFornecedoresLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="modalGerenciarFornecedoresLabel">
+                    <i class="fas fa-cogs me-2"></i>Gerenciar Fornecedores
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Nome da Empresa</th>
+                                <th>CNPJ</th>
+                                <th>Contato</th>
+                                <th>Produtos</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fornecedores-list">
+                            <!-- Fornecedores serão carregados aqui via JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="loading-fornecedores" class="text-center py-4" style="display: none;">
+                    <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
+                    <p class="text-muted mt-2">Carregando fornecedores...</p>
+                </div>
+
+                <div id="no-fornecedores" class="text-center py-4" style="display: none;">
+                    <i class="fas fa-info-circle fa-2x text-muted"></i>
+                    <p class="text-muted mt-2">Nenhum fornecedor cadastrado ainda.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalFornecedor" onclick="abrirCadastroFornecedor()">
+                    <i class="fas fa-plus me-1"></i>Novo Fornecedor
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Edição de Fornecedor -->
+<div class="modal fade" id="modalEditarFornecedor" tabindex="-1" aria-labelledby="modalEditarFornecedorLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="modalEditarFornecedorLabel">
+                    <i class="fas fa-edit me-2"></i>Editar Fornecedor
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+          <form id="formEditarFornecedor">
+  <input type="hidden" id="edit_fornecedor_id" name="fornecedor_id">
+
+  <input id="edit_cnpj" name="cnpj" class="form-control">
+  <input id="edit_nome_empresa" name="nome_empresa" class="form-control">
+
+  <input id="edit_endereco" name="endereco" class="form-control">
+  <input id="edit_atividade_principal" name="atividade_principal" class="form-control">
+  <input id="edit_contato" name="contato" class="form-control">
+  <input id="edit_nome_vendedor" name="nome_vendedor" class="form-control">
+  <input id="edit_contato_vendedor" name="contato_vendedor" class="form-control">
+  <textarea id="edit_comentario" name="comentario" class="form-control"></textarea>
+
+  <button type="submit" class="btn btn-primary">Salvar</button>
+</form>
+
+
+
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Importar CSV -->
+<div class="modal fade" id="modalImportarCSV" tabindex="-1" aria-labelledby="modalImportarCSVLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-secondary text-white">
+                <h5 class="modal-title" id="modalImportarCSVLabel">
+                    <i class="fas fa-upload me-2"></i>Importar Produtos via CSV
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/precificaja/importar_produtos_csv" method="POST" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Instruções:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li>Baixe o modelo CSV primeiro</li>
+                            <li>Preencha os dados seguindo o formato</li>
+                            <li>Certifique-se de que os fornecedores já estão cadastrados</li>
+                        </ul>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Selecionar Arquivo CSV</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success">Importar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Excluir por Fornecedor -->
+<div class="modal fade" id="modalExcluirPorFornecedor" tabindex="-1" aria-labelledby="modalExcluirPorFornecedorLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="modalExcluirPorFornecedorLabel">
+                    <i class="fas fa-user-slash me-2"></i>Excluir Produtos por Fornecedor
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Esta ação removerá <strong>todos</strong> os produtos vinculados ao fornecedor selecionado.
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Fornecedor</label>
+                    <select class="form-select" id="fornecedor-exclusao-id">
+                        <option value="">Selecione...</option>
+                        {% for fornecedor in fornecedores %}
+                        <option value="{{ fornecedor.id }}">{{ fornecedor.nome_empresa }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button class="btn btn-danger" onclick="confirmarExcluirPorFornecedor()">Excluir</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Detalhes do Produto - USANDO ROTAS REAIS -->
+<div class="modal fade" id="modalDetalhes" tabindex="-1" aria-labelledby="modalDetalhesLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="modalDetalhesLabel">
+                    <i class="fas fa-cog me-2"></i>Gerenciar Detalhes do Produto
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="detalhes-content">
+                    <div class="text-center py-4">
+                        <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
+                        <p class="text-muted mt-2">Carregando detalhes...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="editFornecedorModal" tabindex="-1" aria-labelledby="editFornecedorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <form id="formEdicaoFornecedor" method="POST" class="needs-validation" novalidate>
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title" id="editFornecedorModalLabel">
+                        <i class="fas fa-edit me-2"></i>
+                        Editar Fornecedor
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="edit_fornecedor_id" name="fornecedor_id">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_cnpj" class="form-label fw-semibold">CNPJ</label>
+                            <input type="text" id="edit_cnpj" name="cnpj" class="form-control" required>
+                            <div class="invalid-feedback">CNPJ é obrigatório.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_nome_empresa" class="form-label fw-semibold">Nome da Empresa</label>
+                            <input type="text" id="edit_nome_empresa" name="nome_empresa" class="form-control" required>
+                            <div class="invalid-feedback">Nome da empresa é obrigatório.</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_atividade_principal" class="form-label fw-semibold">Atividade Principal</label>
+                            <input type="text" id="edit_atividade_principal" name="atividade_principal" class="form-control">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_endereco" class="form-label fw-semibold">Endereço</label>
+                            <input type="text" id="edit_endereco" name="endereco" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_contato" class="form-label fw-semibold">Contato da Empresa</label>
+                            <input type="text" id="edit_contato" name="contato" class="form-control">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_nome_vendedor" class="form-label fw-semibold">Nome do Vendedor</label>
+                            <input type="text" id="edit_nome_vendedor" name="nome_vendedor" class="form-control">
+                        </div>
+                    </div>
+                     <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_contato_vendedor" class="form-label fw-semibold">Contato do Vendedor</label>
+                            <input type="text" id="edit_contato_vendedor" name="contato_vendedor" class="form-control">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_comentario" class="form-label fw-semibold">Comentário</label>
+                            <textarea id="edit_comentario" name="comentario" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-warning">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+// ============================================================================
+// VARIÁVEIS GLOBAIS
+// ============================================================================
+let fornecedoresCache = [];
+let produtoAtualId = null;
+// Delegação: captura cliques nos botões dentro do modal Gerenciar Fornecedores
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('#modalGerenciarFornecedores [data-action]');
+  if (!btn) return;
+
+  const id = Number(btn.dataset.id);
+  if (btn.dataset.action === 'edit') {
+    handleEditarFornecedor(id);
+  } else if (btn.dataset.action === 'delete') {
+    excluirFornecedor(id, btn.dataset.name, Number(btn.dataset.total));
+  }
+});
+
+// ============================================================================
+// INICIALIZAÇÃO
+// ============================================================================
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Página carregada, inicializando sistema...');
+
+    try {
+        // Calcular estatísticas do DOM
+        calcularEstatisticasDOM();
+
+        // Configurar eventos
+        configurarEventosModais();
+
+        // Atualizar seleção inicial
+        updateSelecao();
+
+        // Definir valores iniciais para os filtros se presentes na URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const filtroProduto = urlParams.get('busca');
+        const filtroFornecedor = urlParams.get('fornecedor_id');
+        const filtroStatus = urlParams.get('status');
+        const perPage = urlParams.get('per_page');
+
+        if (filtroProduto) document.getElementById('filtro-produto').value = filtroProduto;
+        if (filtroFornecedor) document.getElementById('filtro-fornecedor').value = filtroFornecedor;
+        if (filtroStatus) document.getElementById('filtro-status').value = filtroStatus;
+        if (perPage) document.getElementById('per-page-select').value = perPage;
+
+        console.log('Inicialização concluída');
+    } catch (error) {
+        console.error('Erro na inicialização:', error);
+    }
+});
+
+// ============================================================================
+// FUNÇÕES DE FILTRO E PAGINAÇÃO
+// ============================================================================
+function construirURL(page = 1, per_page = null) {
+    const params = new URLSearchParams(window.location.search);
+    const fornecedorId = document.getElementById('filtro-fornecedor')?.value || '';
+    const busca = document.getElementById('filtro-produto')?.value?.trim() || '';
+    const status = document.getElementById('filtro-status')?.value || '';
+
+    // Remover parâmetros de paginação antigos
+    params.delete('page');
+    params.delete('per_page');
+
+    // Adicionar parâmetros de filtro
+    if (fornecedorId) params.set('fornecedor_id', fornecedorId);
+    else params.delete('fornecedor_id');
+
+    if (busca) params.set('busca', busca);
+    else params.delete('busca');
+
+    if (status) params.set('status', status);
+    else params.delete('status');
+
+    // Adicionar parâmetros de paginação
+    params.set('page', page);
+    if (per_page) {
+        params.set('per_page', per_page);
+    } else if (document.getElementById('per-page-select')) {
+        params.set('per_page', document.getElementById('per-page-select').value);
+    } else {
+        params.set('per_page', 20); // Valor padrão se o select não existir
+    }
+
+    return '/precificaja/produtos_fornecedores?' + params.toString();
+}
+
+function aplicarFiltros() {
+    try {
+        window.location.href = construirURL(1); // Ao aplicar filtros, volta para a primeira página
+    } catch (error) {
+        console.error('Erro ao aplicar filtros:', error);
+    }
+}
+
+function limparFiltros() {
+    try {
+        const filtros = ['filtro-produto', 'filtro-fornecedor', 'filtro-status'];
+        filtros.forEach(id => {
+            const elemento = document.getElementById(id);
+            if (elemento) elemento.value = '';
+        });
+
+        window.location.href = construirURL(1); // Ao limpar filtros, volta para a primeira página
+    } catch (error) {
+        console.error('Erro ao limpar filtros:', error);
+    }
+}
+
+function mudarPagina(page) {
+    try {
+        window.location.href = construirURL(page);
+    } catch (error) {
+        console.error('Erro ao mudar de página:', error);
+    }
+}
+
+function mudarItensPorPagina(per_page) {
+    try {
+        window.location.href = construirURL(1, per_page); // Ao mudar itens por página, volta para a primeira página
+    } catch (error) {
+        console.error('Erro ao mudar itens por página:', error);
+    }
+}
+
+// ============================================================================
+// FUNÇÕES DE ESTATÍSTICAS
+// ============================================================================
+function calcularEstatisticasDOM() {
+    try {
+        const linhas = document.querySelectorAll('#produtos-tbody tr[data-produto-id]');
+        let comFoto = 0;
+        let comDescricao = 0;
+
+        linhas.forEach(linha => {
+            const statusFoto = linha.querySelector('.status-foto');
+            const statusDescricao = linha.querySelector('.status-descricao');
+
+            if (statusFoto && statusFoto.classList.contains('bg-success')) {
+                comFoto++;
+            }
+            if (statusDescricao && statusDescricao.classList.contains('bg-info')) {
+                comDescricao++;
+            }
+        });
+
+        const statFotos = document.getElementById('stat-fotos');
+        const statDescricoes = document.getElementById('stat-descricoes');
+
+        if (statFotos) statFotos.textContent = comFoto;
+        if (statDescricoes) statDescricoes.textContent = comDescricao;
+    } catch (error) {
+        console.error('Erro ao calcular estatísticas:', error);
+    }
+}
+
+// ============================================================================
+// FUNÇÕES DE SELEÇÃO
+// ============================================================================
+function updateSelecao() {
+    try {
+        const checkboxes = document.querySelectorAll('.produto-checkbox:checked');
+        const selecionados = checkboxes.length;
+
+        const statSelecionados = document.getElementById('stat-selecionados');
+        const countSelecionados = document.getElementById('count-selecionados');
+
+        if (statSelecionados) statSelecionados.textContent = selecionados;
+        if (countSelecionados) countSelecionados.textContent = selecionados;
+
+        // Habilitar/desabilitar botões
+        const btnCatalogo = document.getElementById('btn-catalogo-selecionados');
+        const btnExcluir = document.getElementById('btn-excluir-selecionados');
+
+        if (btnCatalogo) btnCatalogo.disabled = selecionados === 0;
+        if (btnExcluir) btnExcluir.disabled = selecionados === 0;
+    } catch (error) {
+        console.error('Erro ao atualizar seleção:', error);
+    }
+}
+
+function toggleSelectAll() {
+    try {
+        const selectAll = document.getElementById('select-all');
+        const checkboxes = document.querySelectorAll('.produto-checkbox');
+
+        if (selectAll && checkboxes) {
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAll.checked;
+            });
+            updateSelecao();
+        }
+    } catch (error) {
+        console.error('Erro ao selecionar todos:', error);
+    }
+}
+
+// ============================================================================
+// CONFIGURAÇÃO DE EVENTOS
+// ============================================================================
+function configurarEventosModais() {
+    try {
+        // Evento para carregar fornecedores ao abrir modal de produto
+        const modalProduto = document.getElementById('modalProduto');
+        if (modalProduto) {
+            modalProduto.addEventListener('show.bs.modal', function() {
+                carregarFornecedoresSelect();
+            });
+        }
+
+        // Evento para formulário de edição de fornecedor
+        const formEditarFornecedor = document.getElementById('formEditarFornecedor');
+        if (formEditarFornecedor) {
+            formEditarFornecedor.addEventListener('submit', function(e) {
+                e.preventDefault();
+                salvarEdicaoFornecedor();
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao configurar eventos:', error);
+    }
+}
+// Em <script> no final de produtos_fornecedores_paginacao_completa.html
+
+function abrirModalEdicaoFornecedor(fornecedorId) {
+    // Busca os dados do fornecedor via AJAX para garantir que estão atualizados
+    fetch(`/precificaja/fornecedor_produtos/listar`) // Reutilizamos a lista de fornecedores
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const fornecedor = data.fornecedores.find(f => f.id === fornecedorId);
+                if (fornecedor) {
+                    // Preenche o formulário do modal de edição
+                    document.getElementById('edit_fornecedor_id').value = fornecedor.id;
+                    document.getElementById('edit_cnpj').value = fornecedor.cnpj;
+                    document.getElementById('edit_nome_empresa').value = fornecedor.nome_empresa;
+                    document.getElementById('edit_atividade_principal').value = fornecedor.atividade_principal || '';
+                    document.getElementById('edit_endereco').value = fornecedor.endereco || '';
+                    document.getElementById('edit_contato').value = fornecedor.contato || '';
+                    document.getElementById('edit_nome_vendedor').value = fornecedor.nome_vendedor || '';
+                    document.getElementById('edit_contato_vendedor').value = fornecedor.contato_vendedor || '';
+                    document.getElementById('edit_comentario').value = fornecedor.comentario || '';
+
+                    // Abre o modal
+                    const editModal = new bootstrap.Modal(document.getElementById('editFornecedorModal'));
+                    editModal.show();
+                } else {
+                    alert('Erro: Fornecedor não encontrado.');
+                }
+            } else {
+                alert('Erro ao buscar dados do fornecedor.');
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Ocorreu um erro de comunicação com o servidor.');
+        });
+}
+
+// Event listener para o formulário de edição de fornecedor
+document.getElementById('formEdicaoFornecedor').addEventListener('submit', function(event) {
+    event.preventDefault();
+    const fornecedorId = document.getElementById('edit_fornecedor_id').value;
+    const formData = new FormData(this);
+    const submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Salvando...';
+
+    fetch(`/precificaja/fornecedor_produtos/editar/${fornecedorId}`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            bootstrap.Modal.getInstance(document.getElementById('editFornecedorModal')).hide();
+            // Recarrega a lista de fornecedores na aba, sem recarregar a página inteira
+            carregarFornecedores();
+        } else {
+            alert('Erro: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert('Ocorreu um erro ao tentar salvar as alterações.');
+    })
+    .finally(() => {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Salvar Alterações';
+    });
+});
+// ============================================================================
+// CARREGAR FORNECEDORES (CORRIGIDO)
+// ============================================================================
+function carregarFornecedoresSelect() {
+    const selectFornecedor = document.getElementById('fornecedor_id');
+    if (!selectFornecedor) return;
+
+    selectFornecedor.innerHTML = '<option value="">Carregando fornecedores...</option>';
+
+    // Usar fornecedores já disponíveis no template primeiro
+    const fornecedoresTemplate = [
+        {% for fornecedor in fornecedores %}
+        {
+            id: {{ fornecedor.id }},
+            nome_empresa: "{{ fornecedor.nome_empresa|replace('"', '\"') }}"
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    if (fornecedoresTemplate.length > 0) {
+        selectFornecedor.innerHTML = '<option value="">Selecione um fornecedor</option>';
+        fornecedoresTemplate.forEach(f => {
+            const option = document.createElement('option');
+            option.value = f.id;
+            option.textContent = f.nome_empresa;
+            selectFornecedor.appendChild(option);
+        });
+        fornecedoresCache = fornecedoresTemplate; // Atualiza cache
+    } else {
+        // Se não houver fornecedores no template, tenta buscar via API (se necessário)
+        // Por simplicidade, vamos assumir que o template sempre terá os fornecedores iniciais
+        selectFornecedor.innerHTML = '<option value="">Nenhum fornecedor cadastrado</option>';
+    }
+}
+
+// ============================================================================
+// FUNÇÕES DE EDIÇÃO DE PRODUTO
+// ============================================================================
+function editarProduto(id, nome, marca, modelo, unidade, custo, fornecedorId) {
+    try {
+        // Preencher formulário de edição
+        const campos = {
+            'produto_id': id,
+            'nome': nome,
+            'marca': marca || '',
+            'modelo': modelo || '',
+            'unidade_medida': unidade || 'UN',
+            'custo': custo || 0
+        };
+
+        Object.keys(campos).forEach(campo => {
+            const elemento = document.getElementById(campo);
+            if (elemento) elemento.value = campos[campo];
+        });
+
+        // Alterar título do modal
+        const titulo = document.getElementById('modalProdutoLabel');
+        if (titulo) titulo.innerHTML = '<i class="fas fa-edit me-2"></i>Editar Produto';
+
+        // Alterar action do formulário
+        const form = document.getElementById('formProduto');
+        if (form) form.action = '/precificaja/produtos_fornecedores/editar';
+
+        // Carregar fornecedores e selecionar o atual
+        carregarFornecedoresSelect();
+
+        // Aguardar carregamento dos fornecedores para selecionar
+        setTimeout(() => {
+            const selectFornecedor = document.getElementById('fornecedor_id');
+            if (selectFornecedor && fornecedorId) {
+                selectFornecedor.value = fornecedorId;
+            }
+        }, 500);
+
+        // Abrir modal
+        const modal = new bootstrap.Modal(document.getElementById('modalProduto'));
+        modal.show();
+    } catch (error) {
+        console.error('Erro ao editar produto:', error);
+    }
+}function handleEditarFornecedor(fornecedorId) {
+  try {
+    // garante cache preenchido
+    if (!Array.isArray(window.fornecedoresCache) || !window.fornecedoresCache.length) {
+      showToast('Lista de fornecedores ainda não carregada.', 'warning');
+      return;
+    }
+
+    const fornecedor = window.fornecedoresCache.find(f => Number(f.id) === Number(fornecedorId));
+    if (!fornecedor) {
+      showToast('Fornecedor não encontrado!', 'danger');
+      return;
+    }
+
+    // Preencher formulário do modal Editar
+    const map = {
+      'edit_fornecedor_id'        : fornecedor.id,
+      'edit_cnpj'                 : fornecedor.cnpj || '',
+      'edit_nome_empresa'         : fornecedor.nome_empresa || '',
+      'edit_endereco'             : fornecedor.endereco || '',
+      'edit_atividade_principal'  : fornecedor.atividade_principal || '',
+      'edit_contato'              : fornecedor.contato || '',
+      'edit_nome_vendedor'        : fornecedor.nome_vendedor || '',
+      'edit_contato_vendedor'     : fornecedor.contato_vendedor || '',
+      'edit_comentario'           : fornecedor.comentario || ''
+    };
+    Object.keys(map).forEach(k => { const el = document.getElementById(k); if (el) el.value = map[k]; });
+
+    // Fecha o modal Gerenciar e abre o Editar
+    const mg = bootstrap.Modal.getInstance(document.getElementById('modalGerenciarFornecedores'));
+    if (mg) mg.hide();
+
+    setTimeout(() => {
+      const me = new bootstrap.Modal(document.getElementById('modalEditarFornecedor'));
+      me.show();
+    }, 250);
+
+  } catch (e) {
+    console.error(e);
+    showToast('Erro ao abrir edição do fornecedor.', 'danger');
+  }
+}
+
+// opcional: expõe no escopo global caso algum HTML antigo ainda chame onclick
+window.editarFornecedor = handleEditarFornecedor;
+function salvarEdicaoFornecedor() {
+  try {
+    const form = document.getElementById('formEditarFornecedor');
+    const fornecedorId = document.getElementById('edit_fornecedor_id')?.value;
+    if (!fornecedorId) { showToast('ID do fornecedor ausente no formulário.', 'danger'); return; }
+
+    const formData = new FormData(form);
+
+    fetch(`/precificaja/fornecedor_produtos/editar/${Number(fornecedorId)}`, {
+      method: 'POST',
+      body: formData
+    })
+    .then(async (response) => {
+      const ct = response.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await response.json() : { success:false, error:`HTTP ${response.status}` };
+      if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
+
+      showToast(data.message, 'success');
+
+      const modalEditar = bootstrap.Modal.getInstance(document.getElementById('modalEditarFornecedor'));
+      if (modalEditar) modalEditar.hide();
+
+      // reabre Gerenciar e recarrega a lista
+      setTimeout(() => {
+        new bootstrap.Modal(document.getElementById('modalGerenciarFornecedores')).show();
+        carregarListaFornecedores();
+      }, 300);
+    })
+    .catch(err => {
+      console.error('Erro ao salvar fornecedor:', err);
+      showToast('Erro ao salvar fornecedor: ' + err.message, 'danger');
+    });
+  } catch (error) {
+    console.error('Erro ao salvar fornecedor:', error);
+    showToast('Erro ao salvar fornecedor. Tente novamente.', 'danger');
+  }
+}
+// Toast com fallback para alert (não precisa de HTML extra)
+window.showToast = function (msg, type = 'info', delay = 2500) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack || typeof bootstrap === 'undefined' || !bootstrap.Toast) {
+    // fallback simples se não tiver área de toasts
+    console[type === 'danger' ? 'error' : 'log'](`[${type}] ${msg}`);
+    alert(msg);
+    return;
+  }
+  const id = 't' + Date.now();
+  const html = `
+    <div id="${id}" class="toast align-items-center text-bg-${type} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="d-flex">
+        <div class="toast-body">${(String(msg)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;").replace(/\"/g, "&quot;")
+          .replace(/\'/g, "&#039;"))}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>`;
+  stack.insertAdjacentHTML('beforeend', html);
+  const toastEl = document.getElementById(id);
+  const toast = new bootstrap.Toast(toastEl, { delay });
+  toast.show();
+  toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+};
+
+
+
+// ============================================================================
+// FUNÇÕES DE EXCLUSÃO
+// ============================================================================
+function excluirFornecedor(fornecedorId, nomeEmpresa, totalProdutos) {
+    try {
+        let mensagem = `Tem certeza que deseja excluir o fornecedor "${nomeEmpresa}"?`;
+
+        if (totalProdutos > 0) {
+            mensagem += `\n\nATENÇÃO: Este fornecedor possui ${totalProdutos} produto(s) vinculado(s). Eles ficarão sem fornecedor.`;
+        }
+
+        if (confirm(mensagem)) {
+            fetch(`/precificaja/fornecedor_produtos/excluir/${fornecedorId}`, {
+                method: 'POST'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    carregarListaFornecedores();
+
+                    // Recarregar página para atualizar filtros
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    alert('Erro: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao excluir fornecedor:', error);
+                alert('Erro ao excluir fornecedor: ' + error.message);
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao excluir fornecedor:', error);
+    }
+}
+
+function excluirProduto(produtoId, nomeProduto) {
+    try {
+        if (confirm(`Tem certeza que deseja excluir o produto "${nomeProduto}"?`)) {
+            // Usar rota existente se disponível
+window.location.href = `/precificaja/produtos_fornecedores/excluir_produto/${produtoId}`;
+        }
+    } catch (error) {
+        console.error('Erro ao excluir produto:', error);
+    }
+}
+
+function excluirSelecionados() {
+    try {
+        const selecionados = Array.from(document.querySelectorAll('.produto-checkbox:checked')).map(cb => cb.value);
+
+        if (selecionados.length === 0) {
+            alert('Selecione pelo menos um produto!');
+            return;
+        }
+
+        if (confirm(`Tem certeza que deseja excluir ${selecionados.length} produto(s) selecionado(s)?`)) {
+            fetch('/precificaja/produtos_fornecedores/excluir_selecionados', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ produto_ids: selecionados })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload();
+                } else {
+                    alert('Erro: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao excluir produtos:', error);
+                alert('Erro ao excluir produtos: ' + error.message);
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao excluir selecionados:', error);
+    }
+}
+
+function excluirTodos() {
+    try {
+        if (confirm('ATENÇÃO: Esta ação irá excluir TODOS os seus produtos!\n\nTem certeza que deseja continuar?')) {
+            if (confirm('CONFIRMAÇÃO FINAL: Todos os produtos serão excluídos permanentemente!')) {
+                fetch('/precificaja/produtos_fornecedores/excluir_todos', {
+                    method: 'POST'
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        window.location.reload();
+                    } else {
+                        alert('Erro: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao excluir todos os produtos:', error);
+                    alert('Erro ao excluir produtos: ' + error.message);
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao excluir todos:', error);
+    }
+}
+
+function confirmarExcluirPorFornecedor() {
+    try {
+        const fornecedorId = document.getElementById('fornecedor-exclusao-id')?.value;
+
+        if (!fornecedorId) {
+            alert('Selecione um fornecedor!');
+            return;
+        }
+
+        const fornecedorOption = document.querySelector(`#fornecedor-exclusao-id option[value="${fornecedorId}"]`);
+        const fornecedorNome = fornecedorOption ? fornecedorOption.textContent : 'Fornecedor';
+
+        if (confirm(`Tem certeza que deseja excluir TODOS os produtos do fornecedor "${fornecedorNome}"?`)) {
+            fetch('/precificaja/produtos_fornecedores/excluir_por_fornecedor', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ fornecedor_id: fornecedorId })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+
+                    // Fechar modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('modalExcluirPorFornecedor'));
+                    if (modal) modal.hide();
+
+                    // Recarregar página
+                    window.location.reload();
+                } else {
+                    alert('Erro: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao excluir produtos por fornecedor:', error);
+                alert('Erro ao excluir produtos: ' + error.message);
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao excluir por fornecedor:', error);
+    }
+}
+
+// ============================================================================
+// FUNÇÕES AUXILIARES DE MODAL
+// ============================================================================
+function abrirCadastroFornecedor() {
+    try {
+        // Limpar formulário
+        const form = document.getElementById('formFornecedor');
+        if (form) form.reset();
+
+        // Alterar título
+        const titulo = document.getElementById('modalFornecedorLabel');
+        if (titulo) titulo.innerHTML = '<i class="fas fa-building me-2"></i>Cadastrar Fornecedor';
+    } catch (error) {
+        console.error('Erro ao abrir cadastro de fornecedor:', error);
+    }
+}
+
+// ============================================================================
+// MODAL DE DETALHES USANDO ROTAS REAIS
+// ============================================================================
+function abrirModalDetalhes(produtoId, nomeProduto) {
+    try {
+        produtoAtualId = produtoId;
+        const modal = new bootstrap.Modal(document.getElementById('modalDetalhes'));
+        modal.show();
+
+        // Carregar detalhes do produto usando rota real
+        carregarDetalhesReais(produtoId, nomeProduto);
+    } catch (error) {
+        console.error('Erro ao abrir modal de detalhes:', error);
+        alert('Erro ao abrir detalhes do produto.');
+    }
+}
+
+function carregarDetalhesReais(produtoId, nomeProduto) {
+    try {
+        // Mostrar loading
+        document.getElementById('detalhes-content').innerHTML = `
+            <div class="text-center py-4">
+                <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
+                <p class="text-muted mt-2">Carregando detalhes...</p>
+            </div>
+        `;
+
+        // Buscar detalhes via AJAX usando rota real
+        fetch(`/precificaja/produtos_fornecedores/detalhes/${produtoId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    const detalhes = data.detalhes;
+                    renderizarDetalhesCompletos(detalhes);
+                } else {
+                    throw new Error(data.error || 'Erro ao carregar detalhes');
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao carregar detalhes:', error);
+                // Fallback - renderizar interface básica
+                renderizarDetalhesBasicos(produtoId, nomeProduto);
+            });
+    } catch (error) {
+        console.error('Erro ao carregar detalhes:', error);
+        renderizarDetalhesBasicos(produtoId, nomeProduto);
+    }
+}
+
+function renderizarDetalhesCompletos(detalhes) {
+    try {
+        document.getElementById('detalhes-content').innerHTML = `
+            <div class="row">
+                <!-- Informações Básicas -->
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Produto: ${escapeHtml(detalhes.nome)}</h6>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>ID:</strong> ${detalhes.id}</p>
+                            <p><strong>Nome:</strong> ${escapeHtml(detalhes.nome)}</p>
+                            <p><strong>Marca:</strong> ${escapeHtml(detalhes.marca || 'N/A')}</p>
+                            <p><strong>Modelo:</strong> ${escapeHtml(detalhes.modelo || 'N/A')}</p>
+                            <p><strong>Unidade:</strong> ${escapeHtml(detalhes.unidade_medida || 'N/A')}</p>
+                            <p><strong>Custo:</strong> R$ ${detalhes.custo.toFixed(2)}</p>
+                            <p><strong>Fornecedor:</strong> ${escapeHtml(detalhes.fornecedor_nome)}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gerenciamento de Foto -->
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-success text-white">
+                            <h6 class="mb-0"><i class="fas fa-camera me-2"></i>Foto do Produto</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="foto-container" class="mb-3">
+                                ${detalhes.foto_url ?
+                                    `
+                                    <div class="text-center">
+                                        <img src="${detalhes.foto_url}" class="img-fluid rounded shadow" alt="Foto do produto" style="max-height: 200px;">
+                                        <div class="mt-2">
+                                            <button class="btn btn-sm btn-outline-danger" onclick="removerFotoReal(${detalhes.id})">
+                                                <i class="fas fa-trash-alt me-1"></i>Remover Foto
+                                            </button>
+                                        </div>
+                                    </div>
+                                    `
+                                    :
+                                    `
+                                    <div class="text-center text-muted">
+                                        <i class="fas fa-image fa-3x mb-3"></i>
+                                        <p>Nenhuma foto cadastrada</p>
+                                    </div>
+                                    `
+                                }
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="upload-foto" class="form-label">Adicionar/Atualizar Foto</label>
+                                <input type="file" class="form-control" id="upload-foto" accept="image/*" onchange="uploadFotoReal()">
+                                <small class="text-muted">Formatos aceitos: JPG, PNG, GIF (máx. 5MB)</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Descrição Detalhada -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="fas fa-file-alt me-2"></i>Descrição Detalhada para Catálogos</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="descricao-detalhada" class="form-label">Descrição Completa</label>
+                                <textarea class="form-control" id="descricao-detalhada" rows="6" placeholder="Digite uma descrição detalhada do produto para aparecer nos catálogos...">${escapeHtml(detalhes.descricao_detalhada || '')}</textarea>
+                                <small class="text-muted">Esta descrição aparecerá nos catálogos PDF gerados. Seja detalhado sobre características, especificações e benefícios do produto.</small>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-info" onclick="salvarDescricaoReal()">
+                                    <i class="fas fa-save me-1"></i>Salvar Descrição
+                                </button>
+                                <button class="btn btn-outline-secondary" onclick="limparDescricao()">
+                                    <i class="fas fa-eraser me-1"></i>Limpar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview para Catálogo -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-warning text-dark">
+                            <h6 class="mb-0"><i class="fas fa-eye me-2"></i>Preview do Catálogo</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="border rounded p-3 bg-light">
+                                <div class="row">
+                                    <div class="col-md-4 text-center">
+                                        <div id="preview-foto" class="bg-secondary rounded d-flex align-items-center justify-content-center" style="height: 150px;">
+                                            ${detalhes.foto_url ?
+                                                `<img src="${detalhes.foto_url}" class="img-fluid rounded" style="max-height: 150px;" alt="Preview">`
+                                                :
+                                                `<i class="fas fa-image fa-2x text-white"></i>`
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <h5 class="mb-2">${escapeHtml(detalhes.nome)}</h5>
+                                        <p class="mb-1"><strong>ID:</strong> ${detalhes.id}</p>
+                                        <p class="text-muted small" id="preview-descricao">${escapeHtml(detalhes.descricao_detalhada || 'Nenhuma descrição cadastrada.')}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <small class="text-muted">Este é um preview de como o produto aparecerá nos catálogos PDF.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Erro ao renderizar detalhes completos:', error);
+        renderizarDetalhesBasicos(detalhes.id, detalhes.nome);
+    }
+}
+
+function renderizarDetalhesBasicos(produtoId, nomeProduto) {
+    document.getElementById('detalhes-content').innerHTML = `
+        <div class="row">
+            <!-- Informações Básicas -->
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Produto: ${escapeHtml(nomeProduto)}</h6>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>ID:</strong> ${produtoId}</p>
+                        <p><strong>Nome:</strong> ${escapeHtml(nomeProduto)}</p>
+                        <p class="text-muted">Use as abas ao lado para gerenciar foto e descrição deste produto.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gerenciamento de Foto -->
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0"><i class="fas fa-camera me-2"></i>Foto do Produto</h6>
+                    </div>
+                    <div class="card-body">
+                        <div id="foto-container" class="mb-3">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-image fa-3x mb-3"></i>
+                                <p>Nenhuma foto cadastrada</p>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="upload-foto" class="form-label">Adicionar Foto</label>
+                            <input type="file" class="form-control" id="upload-foto" accept="image/*" onchange="uploadFotoReal()">
+                            <small class="text-muted">Formatos aceitos: JPG, PNG, GIF (máx. 5MB)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Descrição Detalhada -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0"><i class="fas fa-file-alt me-2"></i>Descrição Detalhada para Catálogos</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="descricao-detalhada" class="form-label">Descrição Completa</label>
+                            <textarea class="form-control" id="descricao-detalhada" rows="6" placeholder="Digite uma descrição detalhada do produto para aparecer nos catálogos..."></textarea>
+                            <small class="text-muted">Esta descrição aparecerá nos catálogos PDF gerados. Seja detalhado sobre características, especificações e benefícios do produto.</small>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-info" onclick="salvarDescricaoReal()">
+                                <i class="fas fa-save me-1"></i>Salvar Descrição
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="limparDescricao()">
+                                <i class="fas fa-eraser me-1"></i>Limpar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview para Catálogo -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-warning text-dark">
+                            <h6 class="mb-0"><i class="fas fa-eye me-2"></i>Preview do Catálogo</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="border rounded p-3 bg-light">
+                                <div class="row">
+                                    <div class="col-md-4 text-center">
+                                        <div id="preview-foto" class="bg-secondary rounded d-flex align-items-center justify-content-center" style="height: 150px;">
+                                            <i class="fas fa-image fa-2x text-white"></i>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <h5 class="mb-2">${escapeHtml(nomeProduto)}</h5>
+                                        <p class="mb-1"><strong>ID:</strong> ${produtoId}</p>
+                                        <p class="text-muted small" id="preview-descricao">Nenhuma descrição cadastrada.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <small class="text-muted">Este é um preview de como o produto aparecerá nos catálogos PDF.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+}
+
+// ============================================================================
+// FUNÇÕES DE UPLOAD E SALVAMENTO REAIS
+// ============================================================================
+function uploadFotoReal() {
+    try {
+        const fileInput = document.getElementById('upload-foto');
+        const file = fileInput.files[0];
+
+        if (!file) return;
+
+        // Validar tipo de arquivo
+        if (!file.type.startsWith('image/')) {
+            alert('Por favor, selecione apenas arquivos de imagem.');
+            fileInput.value = '';
+            return;
+        }
+
+        // Validar tamanho (5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('O arquivo deve ter no máximo 5MB.');
+            fileInput.value = '';
+            return;
+        }
+
+        // Mostrar preview imediato
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('foto-container').innerHTML = `
+                <div class="text-center">
+                    <img src="${e.target.result}" class="img-fluid rounded shadow" alt="Preview da foto" style="max-height: 200px;">
+                    <div class="mt-2">
+                        <span class="badge bg-warning">Enviando foto...</span>
+                    </div>
+                </div>
+            `;
+
+            // Atualizar preview do catálogo
+            document.getElementById('preview-foto').innerHTML = `
+                <img src="${e.target.result}" class="img-fluid rounded" style="max-height: 150px;" alt="Preview">
+            `;
+        };
+        reader.readAsDataURL(file);
+
+        // Upload real usando rota existente
+        const formData = new FormData();
+        formData.append('foto', file);
+
+        fetch(`/precificaja/produtos_fornecedores/upload_foto/${produtoAtualId}`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Atualizar interface com foto salva
+                document.getElementById('foto-container').innerHTML = `
+                    <div class="text-center">
+                        <img src="${data.foto_url}" class="img-fluid rounded shadow" alt="Foto do produto" style="max-height: 200px;">
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-danger" onclick="removerFotoReal(${produtoAtualId})">
+                                <i class="fas fa-trash-alt me-1"></i>Remover Foto
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                // Atualizar preview do catálogo
+                document.getElementById('preview-foto').innerHTML = `
+                    <img src="${data.foto_url}" class="img-fluid rounded" style="max-height: 150px;" alt="Preview">
+                `;
+
+                // Atualizar estatísticas
+                calcularEstatisticasDOM();
+
+                alert(data.message);
+            } else {
+                throw new Error(data.error || 'Erro desconhecido');
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao fazer upload:', error);
+            alert('Erro ao enviar foto: ' + error.message);
+
+            // Reverter interface
+            document.getElementById('foto-container').innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="fas fa-image fa-3x mb-3"></i>
+                    <p>Erro ao enviar foto</p>
+                </div>
+            `;
+        });
+
+        // Limpar input
+        fileInput.value = '';
+    } catch (error) {
+        console.error('Erro no upload de foto:', error);
+        alert('Erro ao fazer upload da foto. Tente novamente.');
+    }
+}
+
+function removerFotoReal(produtoId) {
+    try {
+        if (confirm('Tem certeza que deseja remover a foto deste produto?')) {
+            fetch(`/precificaja/produtos_fornecedores/remover_foto/${produtoId}`, {
+                method: 'POST'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    // Atualizar interface para mostrar que a foto foi removida
+                    document.getElementById('foto-container').innerHTML = `
+                        <div class="text-center text-muted">
+                            <i class="fas fa-image fa-3x mb-3"></i>
+                            <p>Nenhuma foto cadastrada</p>
+                        </div>
+                    `;
+                    document.getElementById('preview-foto').innerHTML = `
+                        <i class="fas fa-image fa-2x text-white"></i>
+                    `;
+                    calcularEstatisticasDOM(); // Atualizar estatísticas
+                } else {
+                    throw new Error(data.error || 'Erro desconhecido');
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao remover foto:', error);
+                alert('Erro ao remover foto: ' + error.message);
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao remover foto:', error);
+        alert('Erro ao remover foto. Tente novamente.');
+    }
+}
+
+function salvarDescricaoReal() {
+    try {
+        const descricao = document.getElementById('descricao-detalhada')?.value?.trim() || '';
+
+        if (!descricao) {
+            alert('Digite uma descrição antes de salvar!');
+            return;
+        }
+
+        // Mostrar feedback de salvamento
+        const btnSalvar = document.querySelector('button[onclick="salvarDescricaoReal()"]');
+        const textoOriginal = btnSalvar.innerHTML;
+        btnSalvar.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Salvando...';
+        btnSalvar.disabled = true;
+
+        // Salvar usando rota real
+        const formData = new FormData();
+        formData.append('descricao', descricao);
+
+        fetch(`/precificaja/produtos_fornecedores/salvar_descricao/${produtoAtualId}`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Atualizar preview imediatamente
+                document.getElementById('preview-descricao').textContent = descricao;
+
+                // Atualizar estatísticas
+                calcularEstatisticasDOM();
+
+                alert(data.message);
+            } else {
+                throw new Error(data.error || 'Erro desconhecido');
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao salvar descrição:', error);
+            alert('Erro ao salvar descrição: ' + error.message);
+        })
+        .finally(() => {
+            // Restaurar botão
+            btnSalvar.innerHTML = textoOriginal;
+            btnSalvar.disabled = false;
+        });
+    } catch (error) {
+        console.error('Erro ao salvar descrição:', error);
+        alert('Erro ao salvar descrição. Tente novamente.');
+    }
+}
+
+function limparDescricao() {
+    try {
+        if (confirm('Tem certeza que deseja limpar a descrição?')) {
+            const textarea = document.getElementById('descricao-detalhada');
+            if (textarea) {
+                textarea.value = '';
+                document.getElementById('preview-descricao').textContent = 'Nenhuma descrição cadastrada.';
+                // Chamar API para limpar descrição no backend, se necessário
+                fetch(`/precificaja/produtos_fornecedores/salvar_descricao/${produtoAtualId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ descricao: '' })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Descrição limpa com sucesso!');
+                        calcularEstatisticasDOM(); // Atualizar estatísticas
+                    } else {
+                        alert('Erro ao limpar descrição no servidor: ' + (data.error || 'Erro desconhecido'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao limpar descrição via API:', error);
+                    alert('Erro ao limpar descrição no servidor. Tente novamente.');
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao limpar descrição:', error);
+    }
+}
+
+// ============================================================================
+// FUNÇÕES DE CATÁLOGO - TRATAMENTO ROBUSTO PARA HTML
+// ============================================================================
+function gerarCatalogoTodos() {
+    try {
+        // Usar rota existente se disponível
+        window.open('/precificaja/gerar_catalogo_todos', '_blank');
+    } catch (error) {
+        console.error('Erro ao gerar catálogo:', error);
+        alert('Erro ao gerar catálogo. Tente novamente.');
+    }
+}
+
+function gerarCatalogoSelecionados() {
+    try {
+        const selecionados = Array.from(document.querySelectorAll('.produto-checkbox:checked')).map(cb => cb.value);
+
+        if (selecionados.length === 0) {
+            alert('Selecione pelo menos um produto!');
+            return;
+        }
+
+        console.log('Gerando catálogo com produtos:', selecionados);
+
+        // Mostrar feedback visual
+        const btnCatalogo = document.getElementById('btn-catalogo-selecionados');
+        const textoOriginal = btnCatalogo.innerHTML;
+        btnCatalogo.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Gerando...';
+        btnCatalogo.disabled = true;
+
+        // CORREÇÃO: Tratamento robusto para resposta HTML em vez de JSON
+        fetch('/precificaja/gerar_catalogo_selecionados', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                produto_ids: selecionados
+            })
+        })
+        .then(response => {
+            console.log('Response status:', response.status);
+            console.log('Response headers:', response.headers.get('content-type'));
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            // Verificar se a resposta é JSON ou HTML
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                return response.json();
+            } else {
+                // Se não for JSON, é provavelmente HTML (página de erro ou redirect)
+                return response.text().then(html => {
+                    console.log('Resposta HTML recebida:', html.substring(0, 200));
+                    throw new Error('A rota retornou HTML em vez de JSON. Verifique se a rota está configurada corretamente.');
+                });
+            }
+        })
+        .then(data => {
+            console.log('Response data:', data);
+
+            if (data.success) {
+                // Abrir URL de download
+                if (data.download_url) {
+                    window.open(data.download_url, '_blank');
+                    alert(data.message);
+                } else {
+                    alert('Catálogo gerado com sucesso!');
+                }
+            } else {
+                throw new Error(data.error || 'Erro desconhecido');
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao gerar catálogo:', error);
+
+            // Tratamento específico para diferentes tipos de erro
+            let mensagemErro = 'Erro ao gerar catálogo: ';
+
+            if (error.message.includes('HTML em vez de JSON')) {
+                mensagemErro += 'A rota não está retornando JSON. Verifique a configuração da rota no servidor.';
+            } else if (error.message.includes('Unexpected token')) {
+                mensagemErro += 'Resposta inválida do servidor. Verifique os logs do servidor.';
+            } else {
+                mensagemErro += error.message;
+            }
+
+            alert(mensagemErro);
+        })
+        .finally(() => {
+            // Restaurar botão
+            btnCatalogo.innerHTML = textoOriginal;
+            btnCatalogo.disabled = selecionados.length === 0;
+        });
+    } catch (error) {
+        console.error('Erro ao gerar catálogo selecionados:', error);
+        alert('Erro ao gerar catálogo. Tente novamente.');
+    }
+}
+
+function visualizarCompleto(produtoId) {
+    try {
+        // Usar rota existente
+        window.open(`/precificaja/produtos_fornecedores/visualizar/${produtoId}`, '_blank');
+    } catch (error) {
+        console.error('Erro ao visualizar produto:', error);
+        // Fallback - abrir modal de detalhes
+        const linha = document.querySelector(`tr[data-produto-id="${produtoId}"]`);
+        if (linha) {
+            const nomeProduto = linha.querySelector('strong')?.textContent || 'Produto';
+            abrirModalDetalhes(produtoId, nomeProduto);
+        } else {
+            alert('Erro ao visualizar produto. Tente novamente.');
+        }
+    }
+}
+
+// ============================================================================
+// FUNÇÕES AUXILIARES
+// ============================================================================
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/\'/g, "&#039;");
+}
+// Abre o modal e carrega/atualiza a lista + cache
+function abrirGerenciarFornecedores() {
+  const modalEl = document.getElementById('modalGerenciarFornecedores');
+  const modal = new bootstrap.Modal(modalEl);
+  modal.show();
+  carregarListaFornecedores(); // isto vai popular a tabela E atualizar fornecedoresCache
+}
+
+// Busca na API e preenche a tabela do modal (e atualiza o cache global)
+async function carregarListaFornecedores() {
+  const tbody = document.getElementById('fornecedores-list');
+  const loading = document.getElementById('loading-fornecedores');
+  const vazio = document.getElementById('no-fornecedores');
+
+  try {
+    if (loading) loading.style.display = '';
+    if (vazio) vazio.style.display = 'none';
+    if (tbody) tbody.innerHTML = '';
+
+    const r = await fetch('/precificaja/fornecedor_produtos/listar');
+    if (!r.ok) throw new Error('Falha ao listar fornecedores');
+    const data = await r.json();
+    if (!data.success) throw new Error(data.error || 'Erro inesperado');
+
+    // ATUALIZA O CACHE GLOBAL
+    window.fornecedoresCache = (data.fornecedores || []).map(f => ({
+      // normaliza tipos para evitar “===” falhar
+      id: Number(f.id),
+      cnpj: f.cnpj || '',
+      nome_empresa: f.nome_empresa || '',
+      endereco: f.endereco || '',
+      atividade_principal: f.atividade_principal || '',
+      contato: f.contato || '',
+      nome_vendedor: f.nome_vendedor || '',
+      contato_vendedor: f.contato_vendedor || '',
+      comentario: f.comentario || '',
+      total_produtos: Number(f.total_produtos || 0)
+    }));
+
+    if (!window.fornecedoresCache.length) {
+      if (vazio) vazio.style.display = '';
+      return;
+    }
+
+   // monta as linhas com os botões de ação (sem onclick)
+const linhas = window.fornecedoresCache.map(f => `
+  <tr>
+    <td>${escapeHtml(f.nome_empresa)}</td>
+    <td>${escapeHtml(f.cnpj) || '—'}</td>
+    <td>${escapeHtml(f.contato) || '—'}</td>
+    <td>${f.total_produtos}</td>
+    <td class="text-end">
+      <button class="btn btn-sm btn-outline-primary me-2"
+              data-action="edit" data-id="${f.id}">
+        <i class="fas fa-edit me-1"></i>Editar
+      </button>
+      <button class="btn btn-sm btn-outline-danger"
+              data-action="delete" data-id="${f.id}"
+              data-name="${escapeHtml((f.nome_empresa||'').replace(/'/g,'\\\''))}"
+              data-total="${f.total_produtos}">
+        <i class="fas fa-trash me-1"></i>Excluir
+      </button>
+    </td>
+  </tr>`).join('');
+
+if (tbody) tbody.innerHTML = linhas;
+
+
+  } catch (e) {
+    console.error(e);
+    alert('Erro ao carregar fornecedores.');
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+</script>
+{% endblock %}
+
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const formUploadFoto = document.getElementById('formUploadFoto');
+    if (formUploadFoto) {
+        formUploadFoto.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const produtoId = document.getElementById('detalhes_produto_id_foto').value;
+            const fotoInput = document.getElementById('foto_produto_input');
+            const file = fotoInput.files[0];
+
+            if (!file) {
+                alert('Por favor, selecione um arquivo de imagem.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('foto', file);
+
+            fetch(`/precificaja/produtos_fornecedores/upload_foto/${produtoId}`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    // Atualizar a imagem na página
+                    const imgElement = document.getElementById('detalhes_foto_produto');
+                    if (imgElement) {
+                        imgElement.src = data.foto_url;
+                    }
+                    // Opcional: recarregar a página ou atualizar a lista de produtos
+                    location.reload();
+                } else {
+                    alert('Erro ao enviar foto: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Erro:', error);
+                alert('Ocorreu um erro ao enviar a foto. Verifique o console para mais detalhes.');
+            });
+        });
+    }
+});
+</script>
+

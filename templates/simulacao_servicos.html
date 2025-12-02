@@ -1,0 +1,1027 @@
+{% extends "base.html" %}
+
+{% block title %}Simulação de Serviços{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header com Gradiente no mesmo padrão -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body bg-gradient-primary text-white rounded">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <h2 class="mb-1">
+                                <i class="fas fa-chart-line me-2"></i>Simulação de Propostas de Serviços
+                            </h2>
+                            <p class="mb-0 opacity-75">Gerencie e analise suas propostas de serviços</p>
+                        </div>
+                        <div class="text-end">
+                            <a href="/precificaja/servicos" class="btn btn-light btn-sm">
+                                <i class="fas fa-plus me-1"></i>Nova Proposta
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cards de Estatísticas (padrão visual) -->
+    <div class="row mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center p-3">
+                    <div class="text-primary fs-2 mb-2">
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                    <h5 class="mb-0 text-primary" id="totalPropostas">0</h5>
+                    <small class="text-muted">Total de Propostas</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center p-3">
+                    <div class="text-warning fs-2 mb-2">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <h5 class="mb-0 text-warning" id="totalHabilitacao">0</h5>
+                    <small class="text-muted">Em Habilitação</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 mt-3 mt-md-0">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center p-3">
+                    <div class="text-success fs-2 mb-2">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <h5 class="mb-0 text-success" id="totalAdjudica">0</h5>
+                    <small class="text-muted">Adjudicadas</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 mt-3 mt-md-0">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center p-3">
+                    <div class="text-danger fs-2 mb-2">
+                        <i class="fas fa-times-circle"></i>
+                    </div>
+                    <h5 class="mb-0 text-danger" id="totalPerdida">0</h5>
+                    <small class="text-muted">Perdidas</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-8">
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0">
+                                    <i class="fas fa-search text-muted"></i>
+                                </span>
+                                <input type="text" class="form-control border-start-0" id="campoBusca"
+                                       placeholder="Buscar por CNPJ, Razão Social ou Endereço"
+                                       onkeyup="filtrarTabela()">
+                            </div>
+                        </div>
+                        <div class="col-8 col-md-3">
+                            <select class="form-select" id="filtroStatus" onchange="filtrarTabela()">
+                                <option value="">Todos os status</option>
+                                <option value="habilitação">Habilitação</option>
+                                <option value="adjudica">Adjudica</option>
+                                <option value="perdida">Perdida</option>
+                                <option value="anulada">Anulada</option>
+                                <option value="prazo vencido">Prazo Vencido</option>
+                            </select>
+                        </div>
+                        <div class="col-4 col-md-1 d-grid">
+                            <button type="button" class="btn btn-outline-secondary" onclick="limparFiltros()">
+                                <i class="fas fa-eraser me-1"></i>Limpar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela de Propostas -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom">
+                    <h6 class="mb-0">
+                        <i class="fas fa-table me-2"></i>Lista de Propostas
+                    </h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="tabelaSimulacao">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>CNPJ</th>
+                                    <th>Razão Social</th>
+                                    <th>Endereço</th>
+                                    <th>Status</th>
+                                    <th>Data</th>
+                                    <th class="text-center">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for registro in registros %}
+                                <tr class="align-middle" data-row-id="{{ registro.id }}">
+                                    <td>{{ registro.cnpj }}</td>
+                                    <td>
+                                        <div class="text-truncate" style="max-width:220px" title="{{ registro.razao_social }}">
+                                            {{ registro.razao_social }}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="text-truncate text-muted" style="max-width:220px" title="{{ registro.endereco }}">
+                                            {{ registro.endereco }}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="status-badge status-{{ registro.status.lower().replace(' ', '-') }}"
+                                              id="status-{{ registro.id }}">
+                                            {{ registro.status }}
+                                        </span>
+                                    </td>
+                                    <td>{{ registro.criado_em.strftime('%d/%m/%Y') }}</td>
+                                    <td class="text-center pe-3">
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button type="button" class="btn btn-outline-primary"
+                                                    onclick="abrirModal({{ registro.id }})" title="Visualizar/Editar">
+                                                <i class="fas fa-eye me-1"></i>Detalhes
+                                            </button>
+                                            <button type="button" class="btn btn-outline-warning"
+                                                    onclick="abrirModalStatus({{ registro.id }}, '{{ registro.status }}')"
+                                                    title="Alterar Status">
+                                                <i class="fas fa-edit me-1"></i>Status
+                                            </button>
+                                            <a href="/precificaja/proposta_servico/{{ registro.id }}/imprimir"
+                                               class="btn btn-outline-info" target="_blank" title="Carta Proposta">
+                                                <i class="fas fa-file-pdf me-1"></i>Carta
+                                            </a>
+                                            <button type="button" class="btn btn-outline-danger"
+                                                    onclick="excluirProposta({{ registro.id }})" title="Excluir">
+                                                <i class="fas fa-trash me-1"></i>Excluir
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Edição -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-gradient-primary text-white border-0">
+                <h5 class="modal-title">
+                    <i class="fas fa-edit me-2"></i>Simulação de Proposta de Serviços
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+                <input type="hidden" id="registroId">
+
+                <!-- Informações Básicas -->
+                <div class="card border-0 bg-light mb-4">
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">CNPJ</label>
+                                <input type="text" class="form-control bg-white" id="cnpj" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-medium">Razão Social</label>
+                                <input type="text" class="form-control bg-white" id="razao_social" readonly>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <ul class="nav nav-tabs" id="myTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="servicos-tab" data-bs-toggle="tab"
+                                data-bs-target="#servicos" type="button" role="tab">
+                            <i class="fas fa-cogs me-2"></i>Serviços
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="despesas-tab" data-bs-toggle="tab"
+                                data-bs-target="#despesas" type="button" role="tab">
+                            <i class="fas fa-receipt me-2"></i>Despesas
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="resumo-tab" data-bs-toggle="tab"
+                                data-bs-target="#resumo" type="button" role="tab">
+                            <i class="fas fa-chart-pie me-2"></i>Resumo
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="bdi-tab" data-bs-toggle="tab"
+                                data-bs-target="#bdi" type="button" role="tab">
+                            <i class="fas fa-calculator me-2"></i>BDI
+                        </button>
+                    </li>
+                    <!-- NOVA Aba Observações -->
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="obs-tab" data-bs-toggle="tab"
+                                data-bs-target="#observacoes" type="button" role="tab">
+                            <i class="fas fa-sticky-note me-2"></i>Observações
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="myTabContent">
+                    <!-- Tab Serviços -->
+                    <div class="tab-pane fade show active" id="servicos" role="tabpanel">
+                        <div class="mt-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0">Gerenciar Serviços por Lote</h6>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-success" onclick="adicionarLote()">
+                                        <i class="fas fa-plus me-1"></i>Novo Lote
+                                    </button>
+                                    <button type="button" class="btn btn-primary" onclick="adicionarServico()">
+                                        <i class="fas fa-plus me-1"></i>Novo Serviço
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Lote para Novo Serviço</label>
+                                    <select class="form-select" id="selectLote">
+                                        <option value="">Selecione um lote</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-bordered">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Serviço</th>
+                                            <th>Unidade</th>
+                                            <th>Qtd</th>
+                                            <th>Custo Unit.</th>
+                                            <th>Custo Total</th>
+                                            <th>Valor Venda</th>
+                                            <th>Total Venda</th>
+                                            <th>Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="servicosBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Despesas -->
+                    <div class="tab-pane fade" id="despesas" role="tabpanel">
+                        <div class="mt-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0">Gerenciar Despesas</h6>
+                                <button type="button" class="btn btn-primary btn-sm" onclick="adicionarDespesa()">
+                                    <i class="fas fa-plus me-1"></i>Nova Despesa
+                                </button>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-bordered">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Descrição</th>
+                                            <th>Valor</th>
+                                            <th>Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="despesasBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Resumo -->
+                    <div class="tab-pane fade" id="resumo" role="tabpanel">
+                        <div class="mt-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card border-0 shadow-sm">
+                                        <div class="card-header bg-white border-bottom">
+                                            <h6 class="mb-0 text-primary">
+                                                <i class="fas fa-calculator me-2"></i>Resumo Financeiro
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <table class="table table-sm mb-0">
+                                                <tr>
+                                                    <td>Custo Total:</td>
+                                                    <td class="text-end fw-bold" id="resumoCustoTotal">R$ 0,00</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Despesas:</td>
+                                                    <td class="text-end fw-bold" id="resumoDespesasTotal">R$ 0,00</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Impostos:</td>
+                                                    <td class="text-end fw-bold" id="resumoImpostoTotal">R$ 0,00</td>
+                                                </tr>
+                                                <tr class="table-primary">
+                                                    <td><strong>Valor de Venda:</strong></td>
+                                                    <td class="text-end fw-bold" id="resumoValorVendaTotal">R$ 0,00</td>
+                                                </tr>
+                                                <tr class="table-success">
+                                                    <td><strong>Lucro:</strong></td>
+                                                    <td class="text-end fw-bold" id="resumoLucroTotal">R$ 0,00</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><strong>Margem:</strong></td>
+                                                    <td class="text-end fw-bold" id="resumoMargem">0%</td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6 mt-3 mt-md-0">
+                                    <div class="card border-0 shadow-sm">
+                                        <div class="card-header bg-white border-bottom">
+                                            <h6 class="mb-0 text-primary">
+                                                <i class="fas fa-layer-group me-2"></i>Totais por Lote
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="table-responsive">
+                                                <table class="table table-sm mb-0">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Lote</th>
+                                                            <th>Custo</th>
+                                                            <th>Venda</th>
+                                                            <th>Margem</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="totaisLotesBody"></tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab BDI -->
+                    <div class="tab-pane fade" id="bdi" role="tabpanel">
+                        <div class="mt-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card border-0 shadow-sm h-100">
+                                        <div class="card-header bg-white border-bottom">
+                                            <h6 class="mb-0 text-primary">
+                                                <i class="fas fa-calculator me-2"></i>Calculadora BDI
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="mb-3">
+                                                <label class="form-label">Administração Central (%)</label>
+                                                <input type="number" class="form-control" id="bdiAdministracao" value="5" step="0.01" onchange="calcularBDI()">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Seguro e Garantia (%)</label>
+                                                <input type="number" class="form-control" id="bdiSeguro" value="1" step="0.01" onchange="calcularBDI()">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Risco (%)</label>
+                                                <input type="number" class="form-control" id="bdiRisco" value="2" step="0.01" onchange="calcularBDI()">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Lucro (%)</label>
+                                                <input type="number" class="form-control" id="bdiLucro" value="8" step="0.01" onchange="calcularBDI()">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Impostos (%)</label>
+                                                <input type="number" class="form-control" id="bdiImpostos" value="15" step="0.01" onchange="calcularBDI()">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mt-3 mt-md-0">
+                                    <div class="card border-0 shadow-sm h-100">
+                                        <div class="card-header bg-white border-bottom">
+                                            <h6 class="mb-0 text-primary">Resultado BDI</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="alert alert-info">
+                                                <h5>BDI Total: <span id="bdiTotal">0%</span></h5>
+                                                <hr>
+                                                <h6>Valor com BDI: <span id="valorComBDI">R$ 0,00</span></h6>
+                                            </div>
+                                            <div class="d-grid gap-2">
+                                                <button type="button" class="btn btn-success" onclick="exportarBDI()">
+                                                    <i class="fas fa-file-excel me-2"></i>Exportar BDI
+                                                </button>
+                                                <button type="button" class="btn btn-info" onclick="exportarPlanilhaCustos()">
+                                                    <i class="fas fa-file-pdf me-2"></i>Planilha de Custos (PDF)
+                                                </button>
+                                                <button type="button" class="btn btn-danger" onclick="exportarCartaPropostaPDF()">
+                                                    <i class="fas fa-file-pdf me-2"></i>Carta Proposta (PDF)
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- NOVA Tab Observações -->
+                    <div class="tab-pane fade" id="observacoes" role="tabpanel">
+                        <div class="mt-3">
+                            <div class="card border-0">
+                                <div class="card-header bg-white border-bottom">
+                                    <h6 class="mb-0 text-primary">
+                                        <i class="fas fa-sticky-note me-2"></i>Observações
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <textarea id="observacaoProposta" class="form-control" rows="4" placeholder="Digite aqui alguma observação..."></textarea>
+                                    </div>
+                                    <div class="alert alert-warning border-0" role="alert">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        <strong>Atenção:</strong> Tudo que for escrito será impresso na carta proposta em PDF.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- /Tab Observações -->
+                </div>
+            </div>
+
+            <!-- Footer com grupo de ações (padrão) -->
+            <div class="modal-footer bg-light border-0 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Fechar
+                </button>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-info" onclick="exportarPlanilhaCustos()">
+                        <i class="fas fa-book me-1"></i>Planilha Custos
+                    </button>
+                    <button type="button" class="btn btn-danger" onclick="exportarCartaPropostaPDF()">
+                        <i class="fas fa-file-pdf me-1"></i>Carta Proposta
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="salvarSimulacao()">
+                        <i class="fas fa-save me-1"></i>Salvar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Status -->
+<div class="modal fade" id="statusModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-gradient-warning text-dark border-0">
+                <h5 class="modal-title">
+                    <i class="fas fa-edit me-2"></i>Alterar Status
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="propostaIdStatus">
+                <label class="form-label fw-medium">Novo Status</label>
+                <select class="form-select" id="novoStatus">
+                    <option value="habilitação">Habilitação</option>
+                    <option value="adjudica">Adjudica</option>
+                    <option value="perdida">Perdida</option>
+                    <option value="anulada">Anulada</option>
+                    <option value="prazo vencido">Prazo Vencido</option>
+                </select>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" onclick="alterarStatus()">
+                    <i class="fas fa-save me-1"></i>Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+<style>
+/* Gradientes e estética iguais à Simulação anterior */
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+}
+.bg-gradient-warning {
+    background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+}
+.card { transition: all .2s ease; border-radius: 1rem; }
+.card:hover { transform: translateY(-1px); }
+.table-hover tbody tr:hover { background-color: rgba(0,123,255,.05); }
+.badge { font-weight: 500; }
+.modal-content { border-radius: 1rem; }
+.form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 .2rem rgba(0,123,255,.25);
+}
+.text-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shadow-sm { box-shadow: 0 .125rem .25rem rgba(0,0,0,.075) !important; }
+.border-0 { border: 0 !important; }
+
+/* Status badges */
+.status-badge { padding:.375rem .75rem; border-radius:.375rem; font-size:.875rem; font-weight:500; }
+.status-habilitação, .status-habilitacao { background-color:#fff3cd; color:#856404; }
+.status-adjudica { background-color:#d1edff; color:#0c5460; }
+.status-perdida { background-color:#f8d7da; color:#721c24; }
+.status-anulada { background-color:#e2e3e5; color:#383d41; }
+.status-prazo-vencido { background-color:#f5c6cb; color:#721c24; }
+
+/* Sidebar preservado */
+#sidebar ul.menu li a { color: white !important; }
+#sidebar ul.menu li a:hover { background-color: #495057 !important; color: white !important; }
+
+/* Tabs coerentes */
+.nav-tabs .nav-link { color:#495057 !important; }
+.nav-tabs .nav-link:hover { color:#212529 !important; }
+.nav-tabs .nav-link.active { color:#212529 !important; }
+</style>
+
+<script>
+// ===== Variáveis globais =====
+let servicos = [];
+let lotes = [];
+let despesas = [];
+let imposto_total = 0;
+let imposto_percentual = 0;
+
+// Formatação moeda
+function formatarMoeda(v){ return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v); }
+
+// Toast
+function mostrarToast(titulo, mensagem, tipo){
+    const box = document.querySelector('.toast-container');
+    const id = 'toast-' + Date.now();
+    box.insertAdjacentHTML('beforeend', `
+        <div id="${id}" class="toast align-items-center text-white bg-${tipo} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body"><strong>${titulo}</strong><br>${mensagem}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>`);
+    const t = new bootstrap.Toast(document.getElementById(id)); t.show();
+    setTimeout(()=>{ const el=document.getElementById(id); if(el) el.remove(); }, 5000);
+}
+
+// ===== Salvar (mantendo sua estrutura/URL) =====
+async function salvarDadosEAguardar(){
+    const registroId = document.getElementById('registroId').value;
+    const lotesFormatados = [];
+
+    lotes.forEach(lote=>{
+        const servicosDoLote = servicos.filter(s=>s.lote_id===lote.id);
+        lotesFormatados.push({
+            nome: lote.nome, id: lote.id,
+            servicos: servicosDoLote.map(s=>({
+                nome: s.nome, unidade_medida: s.unidade_medida,
+                quantidade: s.quantidade, custo_unitario: s.custo_unitario,
+                valor_venda: s.valor_venda
+            }))
+        });
+    });
+
+    const despesasFormatadas = despesas.map(d=>({ descricao: d.descricao, valor: d.valor }));
+
+    const dados = { registro_id: registroId, lotes: lotesFormatados, despesas: despesasFormatadas };
+
+    try{
+        const resp = await fetch('/precificaja/simulacao-servicos/salvar', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(dados)
+        });
+        if(resp.ok){ const data=await resp.json(); return data.success; }
+        const err = await resp.json(); mostrarToast('Erro', err.error||'Falha ao salvar', 'danger'); return false;
+    }catch(e){ mostrarToast('Erro', e.message, 'danger'); return false; }
+}
+
+// Estatísticas
+function calcularEstatisticas(){
+    const linhas = document.querySelectorAll('#tabelaSimulacao tbody tr');
+    let s = { total:linhas.length, habilitacao:0, adjudica:0, perdida:0, anulada:0, prazoVencido:0 };
+    linhas.forEach(l=>{
+        const el = l.querySelector('[id^="status-"]'); if(!el) return;
+        const v = el.textContent.trim().toLowerCase();
+        if(v.includes('habil')) s.habilitacao++;
+        else if(v.includes('adjud')) s.adjudica++;
+        else if(v.includes('perd')) s.perdida++;
+        else if(v.includes('anulad')) s.anulada++;
+        else if(v.includes('prazo')) s.prazoVencido++;
+    });
+    document.getElementById('totalPropostas').textContent = s.total;
+    document.getElementById('totalHabilitacao').textContent = s.habilitacao;
+    document.getElementById('totalAdjudica').textContent = s.adjudica;
+    document.getElementById('totalPerdida').textContent = s.perdida;
+}
+
+// Abrir modal
+function abrirModal(registroId){
+    fetch('/precificaja/simulacao-servicos/'+registroId)
+    .then(r=>r.json())
+    .then(data=>{
+        document.getElementById('registroId').value = registroId;
+        document.getElementById('cnpj').value = data.cnpj;
+        document.getElementById('razao_social').value = data.razao_social;
+
+        lotes = data.lotes || [];
+        servicos = [];
+        lotes.forEach(l=>{
+            (l.servicos||[]).forEach(s=>{ s.lote_id = l.id; servicos.push(s); });
+        });
+        despesas = data.despesas || [];
+        imposto_percentual = parseFloat((data.resumo && data.resumo.imposto_percentual) || 0) || 0;
+
+        preencherSelectLotes();
+        renderServicos();
+        renderTotaisLotes();
+        renderDespesas();
+        calcularResumo();
+        calcularBDI();
+
+        new bootstrap.Modal(document.getElementById('editModal')).show();
+        mostrarToast('Sucesso','Dados carregados!','success');
+    })
+    .catch(e=>{ console.error(e); mostrarToast('Erro','Erro ao carregar dados','danger'); });
+}
+
+// Select lotes
+function preencherSelectLotes(){
+    const sel = document.getElementById('selectLote'); sel.innerHTML = '';
+    if(lotes.length===0){ sel.innerHTML = '<option value="">Nenhum lote disponível</option>'; return; }
+    lotes.forEach(l=>{ const op=document.createElement('option'); op.value=l.id; op.textContent=l.nome; sel.appendChild(op); });
+}
+
+// Adicionar lote/serviço
+function adicionarLote(){
+    const nome = prompt('Digite o nome do novo lote:');
+    if(nome && nome.trim()){
+        lotes.push({ id: Date.now(), nome: nome.trim(), servicos: [] });
+        preencherSelectLotes(); renderTotaisLotes();
+        mostrarToast('Sucesso','Lote adicionado!','success');
+    }
+}
+function adicionarServico(){
+    const loteId = document.getElementById('selectLote').value;
+    if(!loteId){ mostrarToast('Atenção','Selecione um lote','warning'); return;}
+    servicos.push({ id: Date.now(), nome:'Novo Serviço', unidade_medida:'UN', quantidade:1, custo_unitario:0, valor_venda:0, lote_id: parseInt(loteId) });
+    renderServicos(); calcularResumo(); mostrarToast('Sucesso','Serviço adicionado!','success');
+}
+
+// Render serviços
+function renderServicos(){
+    const body = document.getElementById('servicosBody'); body.innerHTML = '';
+    lotes.forEach(l=>{
+        const doLote = servicos.filter(s=>s.lote_id===l.id);
+        if(doLote.length>0){
+            const loteRow = document.createElement('tr');
+            loteRow.className='table-secondary';
+            loteRow.innerHTML = `<td colspan="8"><strong><i class="fas fa-layer-group me-2"></i>Lote: ${l.nome}</strong></td>`;
+            body.appendChild(loteRow);
+
+            let tC=0, tV=0;
+            doLote.forEach(s=>{
+                const cTot = s.custo_unitario*s.quantidade, vTot = s.valor_venda*s.quantidade;
+                tC += cTot; tV += vTot;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><input type="text" class="form-control" value="${s.nome}" data-servico-id="${s.id}" data-campo="nome" oninput="atualizarServico(${s.id}, 'nome', this.value)"></td>
+                    <td><input type="text" class="form-control" value="${s.unidade_medida}" data-servico-id="${s.id}" data-campo="unidade_medida" oninput="atualizarServico(${s.id}, 'unidade_medida', this.value)"></td>
+                    <td><input type="number" class="form-control" value="${s.quantidade}" data-servico-id="${s.id}" data-campo="quantidade" oninput="atualizarServico(${s.id}, 'quantidade', this.value)"></td>
+                    <td><input type="number" class="form-control" value="${s.custo_unitario}" step="0.01" data-servico-id="${s.id}" data-campo="custo_unitario" oninput="atualizarServico(${s.id}, 'custo_unitario', this.value)"></td>
+                    <td class="fw-bold">${formatarMoeda(cTot)}</td>
+                    <td><input type="number" class="form-control" value="${s.valor_venda}" step="0.01" data-servico-id="${s.id}" data-campo="valor_venda" oninput="atualizarServico(${s.id}, 'valor_venda', this.value)"></td>
+                    <td class="fw-bold">${formatarMoeda(vTot)}</td>
+                    <td><button class="btn btn-danger btn-sm" onclick="removerServico(${s.id})"><i class="fas fa-trash"></i></button></td>
+                `;
+                body.appendChild(tr);
+            });
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'table-info';
+            totalRow.innerHTML = `
+                <td colspan="4"><strong>Total do Lote</strong></td>
+                <td class="fw-bold">${formatarMoeda(tC)}</td>
+                <td></td>
+                <td class="fw-bold">${formatarMoeda(tV)}</td>
+                <td></td>`;
+            body.appendChild(totalRow);
+        }
+    });
+    calcularResumo();
+}
+
+// Atualizar/remover serviço
+function atualizarServico(id,campo,valor){
+    const s = servicos.find(x=>x.id===id); if(!s) return;
+    const active = document.activeElement, pos = active && active.selectionStart;
+    if(['nome','unidade_medida'].includes(campo)) s[campo]=valor;
+    else { s[campo] = parseFloat(String(valor).replace(',','.')) || 0; }
+    renderServicos(); renderTotaisLotes(); calcularResumo(); calcularBDI();
+    setTimeout(()=>{
+        const inputs = document.querySelectorAll('#servicosBody input');
+        inputs.forEach(inp=>{
+            if(inp.getAttribute('data-servico-id')==id && inp.getAttribute('data-campo')==campo){
+                inp.focus(); if(typeof pos==='number') inp.setSelectionRange(pos,pos);
+            }
+        });
+    },0);
+}
+function removerServico(id){
+    if(!confirm('Remover este serviço?')) return;
+    servicos = servicos.filter(s=>s.id!==id);
+    renderServicos(); renderTotaisLotes(); calcularResumo();
+    mostrarToast('Sucesso','Serviço removido!','success');
+}
+
+// Totais por lote
+function renderTotaisLotes(){
+    const body = document.getElementById('totaisLotesBody'); body.innerHTML='';
+    lotes.forEach(l=>{
+        const doLote = servicos.filter(s=>s.lote_id===l.id);
+        let c=0,v=0; doLote.forEach(s=>{ c+=s.custo_unitario*s.quantidade; v+=s.valor_venda*s.quantidade; });
+        const margem = c>0 ? ((v-c)/c*100):0;
+        const badge = margem>=20?'bg-success':margem>=10?'bg-warning':'bg-danger';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><strong>${l.nome}</strong></td><td>${formatarMoeda(c)}</td><td>${formatarMoeda(v)}</td><td><span class="badge ${badge}">${margem.toFixed(1)}%</span></td>`;
+        body.appendChild(tr);
+    });
+}
+
+// Despesas
+function adicionarDespesa(){
+    const nome = prompt('Nome da despesa:');
+    const val = prompt('Valor da despesa:');
+    if(nome && val){
+        despesas.push({ id: Date.now(), descricao: nome.trim(), valor: parseFloat(String(val).replace(',','.'))||0 });
+        renderDespesas(); calcularResumo(); mostrarToast('Sucesso','Despesa adicionada!','success');
+    }
+}
+function renderDespesas(){
+    const body = document.getElementById('despesasBody'); body.innerHTML='';
+    despesas.forEach(d=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" class="form-control" value="${d.descricao}" data-despesa-id="${d.id}" data-campo="descricao" oninput="atualizarDespesa(${d.id}, 'descricao', this.value)"></td>
+            <td><input type="number" class="form-control" value="${d.valor}" step="0.01" data-despesa-id="${d.id}" data-campo="valor" oninput="atualizarDespesa(${d.id}, 'valor', this.value)"></td>
+            <td><button class="btn btn-danger btn-sm" onclick="removerDespesa(${d.id})"><i class="fas fa-trash"></i></button></td>`;
+        body.appendChild(tr);
+    });
+}
+function atualizarDespesa(id,campo,valor){
+    const d = despesas.find(x=>x.id===id); if(!d) return;
+    const active = document.activeElement, pos = active && active.selectionStart;
+    d[campo] = (campo==='valor') ? (parseFloat(String(valor).replace(',','.'))||0) : valor;
+    renderDespesas(); calcularResumo(); calcularBDI();
+    setTimeout(()=>{
+        const inputs = document.querySelectorAll('#despesasBody input');
+        inputs.forEach(inp=>{
+            if(inp.getAttribute('data-despesa-id')==id && inp.getAttribute('data-campo')==campo){
+                inp.focus(); if(typeof pos==='number') inp.setSelectionRange(pos,pos);
+            }
+        });
+    },0);
+}
+function removerDespesa(id){
+    if(!confirm('Remover esta despesa?')) return;
+    despesas = despesas.filter(x=>x.id!==id);
+    renderDespesas(); calcularResumo();
+    mostrarToast('Sucesso','Despesa removida!','success');
+}
+
+// Resumo
+function calcularResumo(){
+    let c=0,v=0,d=0;
+    servicos.forEach(s=>{ c+=s.custo_unitario*s.quantidade; v+=s.valor_venda*s.quantidade; });
+    despesas.forEach(x=>{ d+=x.valor; });
+    const imp = v*(imposto_percentual/100);
+    const lucro = v - c - d - imp;
+    const margem = c>0 ? (lucro/c*100):0;
+
+    document.getElementById('resumoCustoTotal').textContent = formatarMoeda(c);
+    document.getElementById('resumoDespesasTotal').textContent = formatarMoeda(d);
+    document.getElementById('resumoImpostoTotal').textContent = formatarMoeda(imp);
+    document.getElementById('resumoValorVendaTotal').textContent = formatarMoeda(v);
+    document.getElementById('resumoLucroTotal').textContent = formatarMoeda(lucro);
+    document.getElementById('resumoMargem').textContent = margem.toFixed(1)+'%';
+}
+
+// BDI
+function calcularBDI(){
+    const ac = parseFloat(document.getElementById('bdiAdministracao').value)||0;
+    const sg = parseFloat(document.getElementById('bdiSeguro').value)||0;
+    const rk = parseFloat(document.getElementById('bdiRisco').value)||0;
+    const lc = parseFloat(document.getElementById('bdiLucro').value)||0;
+    const imp = parseFloat(document.getElementById('bdiImpostos').value)||0;
+
+    const numerador = ac+sg+rk+lc;
+    const denominador = 1 - (imp/100);
+    const bdiDec = (numerador/100)/denominador;
+    const bdiPerc = bdiDec*100;
+
+    let custo=0; servicos.forEach(s=>{ custo+=s.custo_unitario*s.quantidade; });
+    const valor = custo*(1+bdiDec);
+
+    document.getElementById('bdiTotal').textContent = bdiPerc.toFixed(2)+'%';
+    document.getElementById('valorComBDI').textContent = formatarMoeda(valor);
+}
+
+// Exportações
+function exportarBDI(){
+    if(typeof XLSX==='undefined'){ mostrarToast('Erro','Biblioteca XLSX não carregada','danger'); return; }
+    const id = document.getElementById('registroId').value;
+    const dados = {
+        administracao: parseFloat(document.getElementById('bdiAdministracao').value)||0,
+        seguro: parseFloat(document.getElementById('bdiSeguro').value)||0,
+        risco: parseFloat(document.getElementById('bdiRisco').value)||0,
+        lucro: parseFloat(document.getElementById('bdiLucro').value)||0,
+        impostos: parseFloat(document.getElementById('bdiImpostos').value)||0,
+        bdiTotal: document.getElementById('bdiTotal').textContent,
+        valorComBDI: document.getElementById('valorComBDI').textContent
+    };
+    const ws_data = [
+        ['PLANILHA BDI - BENEFÍCIOS E DESPESAS INDIRETAS'], [''],
+        ['Componente', 'Percentual (%)'],
+        ['Administração Central', dados.administracao],
+        ['Seguro e Garantia', dados.seguro],
+        ['Risco', dados.risco],
+        ['Lucro', dados.lucro],
+        ['Impostos', dados.impostos], [''],
+        ['BDI TOTAL', dados.bdiTotal],
+        ['VALOR COM BDI', dados.valorComBDI]
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "BDI");
+    XLSX.writeFile(wb, 'BDI_Proposta_'+id+'.xlsx');
+    mostrarToast('Sucesso','BDI exportado!','success');
+}
+
+// Planilha de custos (tenta salvar antes)
+async function exportarPlanilhaCustos(){
+    const id = document.getElementById('registroId').value;
+    mostrarToast('Aguarde','Preparando relatório...','info');
+    const ok = await salvarDadosEAguardar();
+    if(ok){ setTimeout(()=>{ window.open('/precificaja/proposta_servico/'+id+'/relatorio','_blank'); }, 400); }
+    else { mostrarToast('Erro','Falha ao salvar para gerar relatório','danger'); }
+}
+
+// Carta Proposta PDF (agora com OBS na URL)
+async function exportarCartaPropostaPDF(){
+    const id = document.getElementById('registroId').value;
+    const obs = encodeURIComponent(document.getElementById('observacaoProposta').value || "");
+    mostrarToast('Aguarde','Gerando carta proposta...','info');
+    const ok = await salvarDadosEAguardar();
+    if(ok){ setTimeout(()=>{ window.open('/precificaja/proposta_servico/'+id+'/imprimir?obs='+obs,'_blank'); }, 400); }
+    else { mostrarToast('Erro','Falha ao salvar para gerar carta','danger'); }
+}
+
+// Salvar
+async function salvarSimulacao(){
+    mostrarToast('Aguarde','Salvando alterações...','info');
+    const ok = await salvarDadosEAguardar();
+    if(ok) mostrarToast('Sucesso','Alterações salvas!','success');
+    else mostrarToast('Erro','Não foi possível salvar','danger');
+}
+
+// Filtros
+function filtrarTabela(){
+    const busca = document.getElementById('campoBusca').value.toLowerCase();
+    const status = document.getElementById('filtroStatus').value.toLowerCase();
+    const linhas = document.querySelectorAll('#tabelaSimulacao tbody tr');
+    linhas.forEach(l=>{
+        const texto = l.textContent.toLowerCase();
+        const el = l.querySelector('[id^="status-"]');
+        const st = el ? el.textContent.toLowerCase() : '';
+        const okBusca = !busca || texto.includes(busca);
+        const okStatus = !status || st.includes(status);
+        l.style.display = (okBusca && okStatus) ? '' : 'none';
+    });
+}
+function limparFiltros(){ document.getElementById('campoBusca').value=''; document.getElementById('filtroStatus').value=''; filtrarTabela(); mostrarToast('Filtros','Filtros limpos!','info'); }
+
+// Status
+function abrirModalStatus(id, statusAtual){
+    document.getElementById('propostaIdStatus').value = id;
+    document.getElementById('novoStatus').value = statusAtual;
+    new bootstrap.Modal(document.getElementById('statusModal')).show();
+}
+function alterarStatus(){
+    const id = document.getElementById('propostaIdStatus').value;
+    const novoStatus = document.getElementById('novoStatus').value;
+    fetch('/precificaja/servicos/alterar-status/'+id, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status:novoStatus})
+    })
+    .then(r=>r.json())
+    .then(d=>{
+        if(d.success){
+            const el = document.getElementById('status-'+id);
+            el.textContent = novoStatus;
+            el.className = 'status-badge status-'+novoStatus.toLowerCase().replace(' ','-');
+            bootstrap.Modal.getInstance(document.getElementById('statusModal')).hide();
+            calcularEstatisticas(); mostrarToast('Sucesso','Status alterado!','success');
+        } else { mostrarToast('Erro','Erro ao alterar status','danger'); }
+    })
+    .catch(e=>{ console.error(e); mostrarToast('Erro','Erro ao alterar status','danger'); });
+}
+
+/* ===========================
+   EXCLUIR PROPOSTA (NOVO)
+   - Tenta múltiplas rotas (fallback)
+   - Atualiza a tabela e estatísticas
+   =========================== */
+async function excluirProposta(id){
+    if(!confirm('Tem certeza que deseja excluir esta proposta? Esta ação não pode ser desfeita.')) return;
+
+    // Rotas possíveis (ajuste a 1ª conforme seu backend)
+    const tentativas = [
+        { url: `/precificaja/proposta_servico/${id}/excluir`, method: 'DELETE' },
+        { url: `/precificaja/servicos/excluir/${id}`,        method: 'DELETE' },
+        { url: `/precificaja/proposta/${id}/excluir`,         method: 'DELETE' }, // fallback extra
+        { url: `/precificaja/servicos/excluir/${id}`,        method: 'POST'   }   // se o backend exigir POST
+    ];
+
+    let sucesso = false, ultimaMsg = 'Falha ao excluir';
+
+    for(const tentativa of tentativas){
+        try{
+            const resp = await fetch(tentativa.url, {
+                method: tentativa.method,
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if(resp.ok){
+                const data = await resp.json().catch(()=>({}));
+                if(data.success || data.message){
+                    sucesso = true;
+                    break;
+                } else {
+                    ultimaMsg = data.error || ultimaMsg;
+                }
+            } else {
+                // guarda algum detalhe de erro para debug
+                const txt = await resp.text();
+                ultimaMsg = `HTTP ${resp.status} - ${txt || resp.statusText}`;
+            }
+        }catch(e){
+            ultimaMsg = e.message;
+        }
+        if(sucesso) break;
+    }
+
+    if(sucesso){
+        // remove a linha da tabela (sem reload)
+        const row = document.querySelector(`tr[data-row-id="${id}"]`);
+        if(row && row.parentNode){ row.parentNode.removeChild(row); }
+        calcularEstatisticas();
+        mostrarToast('Sucesso','Proposta excluída com sucesso!','success');
+    } else {
+        mostrarToast('Erro','Não foi possível excluir: '+ultimaMsg,'danger');
+    }
+}
+
+// Lib XLSX
+if(typeof XLSX==='undefined'){
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload=()=>console.log('XLSX carregado');
+    s.onerror=()=>console.error('Erro ao carregar XLSX');
+    document.head.appendChild(s);
+}
+
+// Init
+document.addEventListener('DOMContentLoaded', calcularEstatisticas);
+</script>
+{% endblock %}

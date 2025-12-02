@@ -1,0 +1,7 @@
+REGRAS GERAIS (não ignore):
+- Extraia TODAS as informações do edital, sem omitir e sem resumir listas de itens.
+- Se um valor não existir, escreva exatamente: "Não informado no edital".
+- Para cada ITEM, inclua 'pageRefs' com as páginas de origem onde a informação aparece.
+- Se houver 300+ itens, retorne todos.
+- Se o JSON ficar muito grande, gere um arquivo .json anexado com todo o conteúdo.
+- Responda EXCLUSIVAMENTE no JSON Schema exigido (sem textos fora do JSON).

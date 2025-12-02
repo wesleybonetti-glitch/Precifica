@@ -1,0 +1,934 @@
+{% extends "base.html" %}
+
+{% block title %}Gerenciar Fornecedores{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header com Gradiente -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-lg" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="card-body text-white">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h1 class="mb-2">
+                                <i class="fas fa-truck me-3"></i>
+                                Gerenciar Fornecedores
+                            </h1>
+                            <p class="mb-0 opacity-75">
+                                Página colaborativa para cadastro, avaliação e gerenciamento de fornecedores
+                            </p>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <div class="d-flex align-items-center justify-content-end">
+                                <span class="badge bg-light text-dark fs-6 me-3">
+                                    <i class="fas fa-users me-1"></i>
+                                    Colaborativo
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Informações Importantes -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-info text-white">
+            <h3 class="mb-0">
+                <i class="fas fa-info-circle me-2"></i>
+                Informações Importantes
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info mb-0" role="alert">
+                <div class="row align-items-center">
+                    <div class="col-md-1 text-center">
+                        <i class="fas fa-handshake fa-2x text-info"></i>
+                    </div>
+                    <div class="col-md-11">
+                        <strong>Bem-vindo à página colaborativa de fornecedores!</strong><br>
+                        Todos os fornecedores cadastrados são visíveis para todos. Apenas o usuário que cadastrou pode editar as informações, mas todos podem avaliar os fornecedores. Utilize o botão de avaliação para contribuir com feedback sobre os fornecedores.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ações Principais -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h3 class="mb-0">
+                <i class="fas fa-tools me-2"></i>
+                Ações Principais
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <button type="button"
+                            class="btn btn-success btn-lg w-100"
+                            data-bs-toggle="modal"
+                            data-bs-target="#addFornecedorModal">
+                        <i class="fas fa-plus me-2"></i>
+                        Cadastrar Novo Fornecedor
+                    </button>
+                </div>
+                <div class="col-md-6">
+                    <button id="exportarFornecedores"
+                            class="btn btn-info btn-lg w-100">
+                        <i class="fas fa-download me-2"></i>
+                        Exportar Fornecedores
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h3 class="mb-0">
+                <i class="fas fa-filter me-2"></i>
+                Filtros de Pesquisa
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="filtroNome" class="form-label fw-semibold">
+                        <i class="fas fa-building text-muted me-2"></i>
+                        Filtrar por Nome da Empresa
+                    </label>
+                    <input type="text" id="filtroNome" class="form-control" placeholder="Digite o nome da empresa...">
+                </div>
+                <div class="col-md-6">
+                    <label for="filtroAtividade" class="form-label fw-semibold">
+                        <i class="fas fa-briefcase text-muted me-2"></i>
+                        Filtrar por Atividade
+                    </label>
+                    <input type="text" id="filtroAtividade" class="form-control" placeholder="Digite a atividade...">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lista de Fornecedores com Paginação -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-secondary text-white">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h3 class="mb-0">
+                        <i class="fas fa-list me-2"></i>
+                        Fornecedores Cadastrados
+                    </h3>
+                </div>
+                <div class="col-md-6 text-end">
+                    <span class="badge bg-light text-dark fs-6" id="totalFornecedores">
+                        <i class="fas fa-hashtag me-1"></i>
+                        Total: {{ fornecedores|length if fornecedores else 0 }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if fornecedores %}
+                <!-- Controles de Paginação Superior -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-center">
+                            <label for="itensPorPagina" class="form-label me-2 mb-0">Itens por página:</label>
+                            <select id="itensPorPagina" class="form-select form-select-sm" style="width: auto;">
+                                <option value="6">6</option>
+                                <option value="12" selected>12</option>
+                                <option value="24">24</option>
+                                <option value="48">48</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <nav aria-label="Paginação de fornecedores">
+                            <ul class="pagination pagination-sm justify-content-end mb-0" id="paginacaoSuperior">
+                                <!-- Paginação será gerada dinamicamente -->
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+
+                <!-- Lista de Fornecedores -->
+                <div class="row" id="listaFornecedores">
+                    {% for fornecedor in fornecedores %}
+                    <div class="col-md-4 mb-4 fornecedor-card" data-id="{{ fornecedor.id }}" data-nome="{{ fornecedor.nome_empresa }}" data-atividade="{{ fornecedor.atividade_principal }}">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-body">
+                                <h5 class="card-title text-primary">
+                                    <i class="fas fa-building me-2"></i>
+                                    {{ fornecedor.nome_empresa }}
+                                </h5>
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-id-card me-1"></i>
+                                        <strong>CNPJ:</strong>
+                                    </small>
+                                    <br>{{ fornecedor.cnpj }}
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-phone me-1"></i>
+                                        <strong>Contato:</strong>
+                                    </small>
+                                    <br>{{ fornecedor.contato }}
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-briefcase me-1"></i>
+                                        <strong>Atividade:</strong>
+                                    </small>
+                                    <br>{{ fornecedor.atividade_principal }}
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-user-tie me-1"></i>
+                                        <strong>Vendedor:</strong>
+                                    </small>
+                                    <br>{{ fornecedor.nome_vendedor or 'Não informado' }}
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-mobile-alt me-1"></i>
+                                        <strong>Contato Vendedor:</strong>
+                                    </small>
+                                    <br>{{ fornecedor.contato_vendedor or 'Não informado' }}
+                                </div>
+                                <div class="mb-3">
+                                    <small class="text-muted">
+                                        <i class="fas fa-comment me-1"></i>
+                                        <strong>Comentário:</strong>
+                                    </small>
+                                    <br>{{ fornecedor.comentario or 'Nenhum comentário.' }}
+                                </div>
+                                <div class="mb-3">
+                                    <small class="text-muted">
+                                        <i class="fas fa-star me-1"></i>
+                                        <strong>Avaliação:</strong>
+                                    </small>
+                                    <br>
+                                    {% for i in range(1, 6) %}
+                                        {% if i <= fornecedor.media_avaliacao|round %}
+                                            <span style="color: gold;">★</span>
+                                        {% else %}
+                                            <span style="color: lightgray;">☆</span>
+                                        {% endif %}
+                                    {% endfor %}
+                                    ({{ fornecedor.media_avaliacao|round(2) }})
+                                </div>
+                                <div class="text-center">
+                                    <button class="btn btn-warning btn-sm w-100" onclick="abrirModalAvaliacao({{ fornecedor.id }})">
+                                        <i class="fas fa-star me-2"></i>
+                                        Avaliar Fornecedor
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Controles de Paginação Inferior -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <nav aria-label="Paginação de fornecedores">
+                            <ul class="pagination justify-content-center" id="paginacaoInferior">
+                                <!-- Paginação será gerada dinamicamente -->
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-truck fa-5x text-muted mb-3"></i>
+                    <h4 class="text-muted">Nenhum fornecedor cadastrado</h4>
+                    <p class="text-muted">Comece adicionando seus primeiros fornecedores.</p>
+                    <button type="button"
+                            class="btn btn-success btn-lg"
+                            data-bs-toggle="modal"
+                            data-bs-target="#addFornecedorModal">
+                        <i class="fas fa-plus me-2"></i>
+                        Cadastrar Primeiro Fornecedor
+                    </button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Cadastrar Fornecedor -->
+<div class="modal fade" id="addFornecedorModal" tabindex="-1" aria-labelledby="addFornecedorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <form id="formCadastro" method="POST" action="{{ url_for('fornecedores') }}" class="needs-validation" novalidate>
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title" id="addFornecedorModalLabel">
+                        <i class="fas fa-plus me-2"></i>
+                        Cadastrar Novo Fornecedor
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="cnpj" class="form-label fw-semibold">
+                                <i class="fas fa-id-card text-muted me-2"></i>
+                                CNPJ
+                            </label>
+                            <div class="input-group">
+                                <input type="text" id="cnpj" name="cnpj" class="form-control" required placeholder="00.000.000/0000-00">
+                                <button type="button" id="consultarCnpj" class="btn btn-outline-secondary">
+                                    <i class="fas fa-search me-1"></i>
+                                    Consultar
+                                </button>
+                            </div>
+                            <div class="invalid-feedback">CNPJ é obrigatório.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="nome_empresa" class="form-label fw-semibold">
+                                <i class="fas fa-building text-muted me-2"></i>
+                                Nome da Empresa
+                            </label>
+                            <input type="text" id="nome_empresa" name="nome_empresa" class="form-control" readonly required>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Preenchido automaticamente após consulta do CNPJ
+                            </div>
+                            <div class="invalid-feedback">Nome da empresa é obrigatório.</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="atividade_principal" class="form-label fw-semibold">
+                                <i class="fas fa-briefcase text-muted me-2"></i>
+                                Atividade Principal
+                            </label>
+                            <input type="text" id="atividade_principal" name="atividade_principal" class="form-control" readonly required>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Preenchido automaticamente após consulta do CNPJ
+                            </div>
+                            <div class="invalid-feedback">Atividade principal é obrigatória.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="endereco" class="form-label fw-semibold">
+                                <i class="fas fa-map-marker-alt text-muted me-2"></i>
+                                Endereço
+                            </label>
+                            <input type="text" id="endereco" name="endereco" class="form-control" readonly required>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Preenchido automaticamente após consulta do CNPJ
+                            </div>
+                            <div class="invalid-feedback">Endereço é obrigatório.</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="contato" class="form-label fw-semibold">
+                                <i class="fas fa-phone text-muted me-2"></i>
+                                Contato
+                            </label>
+                            <input type="text" id="contato" name="contato" class="form-control" required placeholder="(00) 0000-0000">
+                            <div class="invalid-feedback">Contato é obrigatório.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="nome_vendedor" class="form-label fw-semibold">
+                                <i class="fas fa-user-tie text-muted me-2"></i>
+                                Nome do Vendedor
+                            </label>
+                            <input type="text" id="nome_vendedor" name="nome_vendedor" class="form-control" required placeholder="Nome completo do vendedor">
+                            <div class="invalid-feedback">Nome do vendedor é obrigatório.</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="contato_vendedor" class="form-label fw-semibold">
+                                <i class="fas fa-mobile-alt text-muted me-2"></i>
+                                Contato do Vendedor
+                            </label>
+                            <input type="text" id="contato_vendedor" name="contato_vendedor" class="form-control" required placeholder="(00) 00000-0000">
+                            <div class="invalid-feedback">Contato do vendedor é obrigatório.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="comentario" class="form-label fw-semibold">
+                                <i class="fas fa-comment text-muted me-2"></i>
+                                Comentário
+                            </label>
+                            <textarea id="comentario" name="comentario" class="form-control" rows="3" required placeholder="Descreva informações relevantes sobre o fornecedor..."></textarea>
+                            <div class="invalid-feedback">Comentário é obrigatório.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-2"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save me-2"></i>
+                        Cadastrar Fornecedor
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Avaliação -->
+<div class="modal fade" id="modalAvaliacao" tabindex="-1" aria-labelledby="modalAvaliacaoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="modalAvaliacaoLabel">
+                    <i class="fas fa-star me-2"></i>
+                    Avaliar Fornecedor
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="formAvaliacao" method="POST" action="/precificaja/fornecedores/avaliar">
+                <input type="hidden" id="avaliacaoFornecedorId" name="fornecedor_id">
+                <div class="modal-body">
+                    {% for nota in ['prazo', 'qualidade', 'preco'] %}
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">
+                            <i class="fas fa-{% if nota == 'prazo' %}clock{% elif nota == 'qualidade' %}check-circle{% else %}dollar-sign{% endif %} text-muted me-2"></i>
+                            Nota {{ nota|capitalize }}
+                        </label>
+                        <div id="nota{{ nota|capitalize }}" class="star-rating">
+                            <span class="estrela" data-value="1">★</span>
+                            <span class="estrela" data-value="2">★</span>
+                            <span class="estrela" data-value="3">★</span>
+                            <span class="estrela" data-value="4">★</span>
+                            <span class="estrela" data-value="5">★</span>
+                        </div>
+                        <input type="hidden" id="nota{{ nota|capitalize }}Input" name="nota_{{ nota }}" required>
+                        <div class="invalid-feedback">Avaliação é obrigatória.</div>
+                    </div>
+                    {% endfor %}
+                    <div class="mb-3">
+                        <label for="avaliacaoComentario" class="form-label fw-semibold">
+                            <i class="fas fa-comment text-muted me-2"></i>
+                            Comentário
+                        </label>
+                        <textarea id="avaliacaoComentario" name="comentario" class="form-control" rows="3" required placeholder="Descreva sua experiência com este fornecedor..."></textarea>
+                        <div class="invalid-feedback">Comentário é obrigatório.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-2"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-save me-2"></i>
+                        Enviar Avaliação
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Estilos personalizados seguindo o padrão dos documentos básicos */
+.card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
+}
+
+.btn {
+    transition: all 0.2s ease-in-out;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.badge {
+    font-size: 0.875rem;
+}
+
+.form-text {
+    font-size: 0.875rem;
+}
+
+.card-header {
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+}
+
+.form-label.fw-semibold {
+    color: #495057;
+    margin-bottom: 0.5rem;
+}
+
+.text-muted {
+    opacity: 0.7;
+}
+
+.modal-content {
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+}
+
+.star-rating {
+    font-size: 1.5rem;
+    margin: 0.5rem 0;
+}
+
+.estrela {
+    color: #ddd;
+    cursor: pointer;
+    transition: color 0.2s ease;
+    margin-right: 0.25rem;
+}
+
+.estrela:hover,
+.estrela.selected {
+    color: #ffc107;
+}
+
+.fornecedor-card .card {
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.fornecedor-card .card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.15);
+}
+
+.input-group .btn {
+    border-color: #ced4da;
+}
+
+.alert {
+    border: none;
+    border-radius: 0.5rem;
+}
+
+/* Paginação personalizada */
+.pagination .page-link {
+    color: #667eea;
+    border-color: #dee2e6;
+}
+
+.pagination .page-item.active .page-link {
+    background-color: #667eea;
+    border-color: #667eea;
+}
+
+.pagination .page-link:hover {
+    color: #5a6fd8;
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+}
+
+/* Responsividade aprimorada */
+@media (max-width: 768px) {
+    .col-md-4 {
+        margin-bottom: 1rem;
+    }
+
+    .card-body {
+        padding: 1rem;
+    }
+
+    .btn-lg {
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+    }
+
+    .modal-dialog {
+        margin: 0.5rem;
+    }
+}
+
+/* Animações suaves */
+.fornecedor-card {
+    opacity: 0;
+    animation: fadeInUp 0.5s ease forwards;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Stagger animation para cards */
+.fornecedor-card:nth-child(1) { animation-delay: 0.1s; }
+.fornecedor-card:nth-child(2) { animation-delay: 0.2s; }
+.fornecedor-card:nth-child(3) { animation-delay: 0.3s; }
+.fornecedor-card:nth-child(4) { animation-delay: 0.4s; }
+.fornecedor-card:nth-child(5) { animation-delay: 0.5s; }
+.fornecedor-card:nth-child(6) { animation-delay: 0.6s; }
+</style>
+
+<script>
+// Variáveis globais para paginação
+let fornecedoresData = [];
+let fornecedoresFiltrados = [];
+let paginaAtual = 1;
+let itensPorPagina = 12;
+
+document.addEventListener("DOMContentLoaded", function () {
+    // Inicializar dados dos fornecedores
+    inicializarFornecedores();
+
+    // Configurar paginação
+    configurarPaginacao();
+
+    // Função para validar formulário de cadastro
+    (() => {
+        'use strict';
+        const forms = document.querySelectorAll('.needs-validation');
+        Array.from(forms).forEach(form => {
+            form.addEventListener('submit', event => {
+                if (!form.checkValidity()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                form.classList.add('was-validated');
+            }, false);
+        });
+    })();
+
+    // Consultar CNPJ
+    document.getElementById('consultarCnpj').addEventListener('click', () => {
+        const cnpj = document.getElementById('cnpj').value.trim();
+        if (!cnpj) {
+            alert("Por favor, digite um CNPJ antes de consultar.");
+            return;
+        }
+
+        const btn = document.getElementById('consultarCnpj');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Consultando...';
+        btn.disabled = true;
+
+        fetch(`/precificaja/fornecedores/consultar_cnpj?cnpj=${cnpj}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    document.getElementById('nome_empresa').value = data.razao_social || '';
+                    document.getElementById('endereco').value = data.endereco || '';
+                    document.getElementById('atividade_principal').value = data.atividade_principal || '';
+                }
+            })
+            .catch(err => {
+                console.error("Erro ao consultar CNPJ:", err);
+                alert("Erro ao consultar CNPJ. Tente novamente.");
+            })
+            .finally(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+    });
+
+    // Filtros
+    const filtroNome = document.getElementById('filtroNome');
+    const filtroAtividade = document.getElementById('filtroAtividade');
+
+    if (filtroNome) filtroNome.addEventListener('input', aplicarFiltros);
+    if (filtroAtividade) filtroAtividade.addEventListener('input', aplicarFiltros);
+
+    // Sistema de estrelas para avaliação
+    document.querySelectorAll('.estrela').forEach(star => {
+        star.addEventListener('click', function () {
+            const value = this.getAttribute('data-value');
+            const container = this.parentNode;
+            const input = container.nextElementSibling;
+
+            input.value = value;
+
+            // Atualizar visual das estrelas
+            container.querySelectorAll('.estrela').forEach((s, index) => {
+                if (index < value) {
+                    s.classList.add('selected');
+                } else {
+                    s.classList.remove('selected');
+                }
+            });
+        });
+
+        // Efeito hover
+        star.addEventListener('mouseenter', function () {
+            const value = this.getAttribute('data-value');
+            const container = this.parentNode;
+
+            container.querySelectorAll('.estrela').forEach((s, index) => {
+                if (index < value) {
+                    s.style.color = '#ffc107';
+                } else {
+                    s.style.color = '#ddd';
+                }
+            });
+        });
+
+        star.parentNode.addEventListener('mouseleave', function () {
+            const container = this;
+            const input = container.nextElementSibling;
+            const selectedValue = input.value;
+
+            container.querySelectorAll('.estrela').forEach((s, index) => {
+                if (index < selectedValue) {
+                    s.style.color = '#ffc107';
+                } else {
+                    s.style.color = '#ddd';
+                }
+            });
+        });
+    });
+
+    // Formulário de avaliação
+    const formAvaliacao = document.getElementById('formAvaliacao');
+    if (formAvaliacao) {
+        formAvaliacao.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Enviando...';
+            submitBtn.disabled = true;
+
+            const fornecedorId = document.getElementById('avaliacaoFornecedorId').value;
+            const formData = new FormData(this);
+
+            fetch(`/precificaja/fornecedores/avaliar/${fornecedorId}`, {
+                method: 'POST',
+                body: formData,
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+                    alert("Avaliação registrada com sucesso!");
+                    bootstrap.Modal.getInstance(document.getElementById('modalAvaliacao')).hide();
+                    location.reload();
+                })
+                .catch(err => {
+                    console.error("Erro ao registrar avaliação:", err);
+                    alert("Erro ao registrar avaliação. Tente novamente.");
+                })
+                .finally(() => {
+                    submitBtn.innerHTML = originalText;
+                    submitBtn.disabled = false;
+                });
+        });
+    }
+
+    // Limpar modal ao fechar
+    document.getElementById('addFornecedorModal').addEventListener('hidden.bs.modal', function () {
+        document.getElementById('formCadastro').reset();
+        document.getElementById('formCadastro').classList.remove('was-validated');
+    });
+});
+
+// Função para inicializar dados dos fornecedores
+function inicializarFornecedores() {
+    const cards = document.querySelectorAll('.fornecedor-card');
+    fornecedoresData = Array.from(cards).map(card => ({
+        element: card,
+        nome: card.getAttribute('data-nome').toLowerCase(),
+        atividade: card.getAttribute('data-atividade').toLowerCase()
+    }));
+    fornecedoresFiltrados = [...fornecedoresData];
+}
+
+// Função para aplicar filtros
+function aplicarFiltros() {
+    const nomeFiltro = document.getElementById('filtroNome').value.toLowerCase();
+    const atividadeFiltro = document.getElementById('filtroAtividade').value.toLowerCase();
+
+    fornecedoresFiltrados = fornecedoresData.filter(fornecedor => {
+        return fornecedor.nome.includes(nomeFiltro) &&
+               fornecedor.atividade.includes(atividadeFiltro);
+    });
+
+    paginaAtual = 1; // Reset para primeira página
+    atualizarPaginacao();
+    exibirPagina();
+}
+
+// Função para configurar paginação
+function configurarPaginacao() {
+    const selectItensPorPagina = document.getElementById('itensPorPagina');
+    if (selectItensPorPagina) {
+        selectItensPorPagina.addEventListener('change', function() {
+            itensPorPagina = parseInt(this.value);
+            paginaAtual = 1;
+            atualizarPaginacao();
+            exibirPagina();
+        });
+    }
+
+    // Inicializar paginação
+    atualizarPaginacao();
+    exibirPagina();
+}
+
+// Função para atualizar controles de paginação
+function atualizarPaginacao() {
+    const totalItens = fornecedoresFiltrados.length;
+    const totalPaginas = Math.ceil(totalItens / itensPorPagina);
+
+    // Atualizar contadores
+    const totalFornecedores = document.getElementById('totalFornecedores');
+    if (totalFornecedores) {
+        totalFornecedores.innerHTML = `<i class="fas fa-hashtag me-1"></i>Total: ${totalItens}`;
+    }
+
+    // Gerar paginação superior e inferior
+    const paginacaoSuperior = document.getElementById('paginacaoSuperior');
+    const paginacaoInferior = document.getElementById('paginacaoInferior');
+
+    if (paginacaoSuperior) paginacaoSuperior.innerHTML = gerarPaginacao(totalPaginas, true);
+    if (paginacaoInferior) paginacaoInferior.innerHTML = gerarPaginacao(totalPaginas, false);
+}
+
+// Função para gerar HTML da paginação
+function gerarPaginacao(totalPaginas, isSmall = false) {
+    if (totalPaginas <= 1) return '';
+
+    const sizeClass = isSmall ? 'pagination-sm' : '';
+    let html = '';
+
+    // Botão Anterior
+    const anteriorDisabled = paginaAtual === 1 ? 'disabled' : '';
+    html += `
+        <li class="page-item ${anteriorDisabled}">
+            <a class="page-link" href="#" onclick="irParaPagina(${paginaAtual - 1})" aria-label="Anterior">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+    `;
+
+    // Números das páginas
+    const maxPaginas = isSmall ? 3 : 5;
+    let inicio = Math.max(1, paginaAtual - Math.floor(maxPaginas / 2));
+    let fim = Math.min(totalPaginas, inicio + maxPaginas - 1);
+
+    if (fim - inicio < maxPaginas - 1) {
+        inicio = Math.max(1, fim - maxPaginas + 1);
+    }
+
+    if (inicio > 1) {
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="irParaPagina(1)">1</a></li>`;
+        if (inicio > 2) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+
+    for (let i = inicio; i <= fim; i++) {
+        const activeClass = i === paginaAtual ? 'active' : '';
+        html += `<li class="page-item ${activeClass}"><a class="page-link" href="#" onclick="irParaPagina(${i})">${i}</a></li>`;
+    }
+
+    if (fim < totalPaginas) {
+        if (fim < totalPaginas - 1) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="irParaPagina(${totalPaginas})">${totalPaginas}</a></li>`;
+    }
+
+    // Botão Próximo
+    const proximoDisabled = paginaAtual === totalPaginas ? 'disabled' : '';
+    html += `
+        <li class="page-item ${proximoDisabled}">
+            <a class="page-link" href="#" onclick="irParaPagina(${paginaAtual + 1})" aria-label="Próximo">
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        </li>
+    `;
+
+    return html;
+}
+
+// Função para ir para uma página específica
+function irParaPagina(pagina) {
+    const totalPaginas = Math.ceil(fornecedoresFiltrados.length / itensPorPagina);
+
+    if (pagina < 1 || pagina > totalPaginas) return;
+
+    paginaAtual = pagina;
+    atualizarPaginacao();
+    exibirPagina();
+
+    // Scroll suave para o topo da lista
+    document.querySelector('.card-header').scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+    });
+}
+
+// Função para exibir itens da página atual
+function exibirPagina() {
+    // Esconder todos os cards
+    fornecedoresData.forEach(fornecedor => {
+        fornecedor.element.style.display = 'none';
+    });
+
+    // Calcular índices da página atual
+    const inicio = (paginaAtual - 1) * itensPorPagina;
+    const fim = inicio + itensPorPagina;
+
+    // Mostrar apenas os cards da página atual
+    const itensPagina = fornecedoresFiltrados.slice(inicio, fim);
+    itensPagina.forEach((fornecedor, index) => {
+        fornecedor.element.style.display = '';
+        // Resetar animação
+        fornecedor.element.style.animationDelay = `${(index + 1) * 0.1}s`;
+    });
+}
+
+// Função para abrir modal de avaliação
+function abrirModalAvaliacao(id) {
+    document.getElementById('avaliacaoFornecedorId').value = id;
+
+    // Limpar estrelas
+    document.querySelectorAll('.estrela').forEach(star => {
+        star.classList.remove('selected');
+        star.style.color = '#ddd';
+    });
+
+    // Limpar inputs
+    document.querySelectorAll('input[name^="nota_"]').forEach(input => {
+        input.value = '';
+    });
+    document.getElementById('avaliacaoComentario').value = '';
+
+    new bootstrap.Modal(document.getElementById('modalAvaliacao')).show();
+}
+
+// Função para exportar fornecedores (placeholder)
+document.getElementById('exportarFornecedores')?.addEventListener('click', function() {
+    alert('Funcionalidade de exportação será implementada em breve!');
+});
+</script>
+{% endblock %}
+

@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+
+{% block title %}Gerenciar Subusuários{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <h1>Gerenciar Subusuários</h1>
+
+    <!-- Formulário para adicionar subusuários -->
+    <div class="my-4">
+        <h2>Adicionar Novo Subusuário</h2>
+        <form id="form-adicionar" method="POST" class="row g-3">
+            <div class="col-md-4 col-12">
+                <input type="text" name="nome" class="form-control" placeholder="Nome" required>
+            </div>
+            <div class="col-md-4 col-12">
+                <input type="email" name="email" class="form-control" placeholder="E-mail" required>
+            </div>
+            <div class="col-md-4 col-12">
+                <input type="password" name="senha" class="form-control" placeholder="Senha" required>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary w-100">Adicionar Subusuário</button>
+            </div>
+        </form>
+    </div>
+
+    <hr>
+
+    <!-- Lista de Subusuários -->
+    <div class="my-4">
+        <h2>Lista de Subusuários</h2>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>E-mail</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="subusuarios-lista">
+                    {% for sub in subusuarios %}
+                    <tr data-id="{{ sub.id }}">
+                        <td>{{ sub.nome }}</td>
+                        <td>{{ sub.email }}</td>
+                        <td>{{ sub.status }}</td>
+                        <td>
+                            <div class="d-flex flex-column flex-md-row gap-2">
+                                <form class="form-alterar-senha d-inline-block w-100">
+                                    <input type="password" name="nova_senha" class="form-control mb-2" placeholder="Nova senha" required>
+                                    <button type="submit" class="btn btn-secondary btn-sm w-100">Alterar Senha</button>
+                                </form>
+                                <button class="btn btn-danger btn-sm btn-excluir w-100">Excluir</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <hr>
+
+    <!-- Logs de Acesso -->
+    <div class="my-4">
+        <h2>Logs de Acesso dos Subusuários</h2>
+        <div class="table-responsive">
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Subusuário</th>
+                        <th>Data de Acesso</th>
+                        <th>Descrição</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td>{{ log.subusuario.nome }}</td>
+                        <td>{{ log.data_acesso }}</td>
+                        <td>{{ log.descricao }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+       // Excluir subusuário
+document.querySelectorAll('.btn-excluir').forEach(button => {
+    button.addEventListener('click', async (event) => {
+        const row = event.target.closest('tr');
+        const subusuarioId = row.dataset.id;
+
+        if (confirm('Tem certeza que deseja excluir este subusuário?')) {
+            const response = await fetch(`/precificaja/excluir/${subusuarioId}`, {  // <- AQUI FOI CORRIGIDO
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                row.remove();
+                alert('Subusuário excluído com sucesso!');
+            } else {
+                alert('Erro ao excluir subusuário.');
+            }
+        }
+    });
+});
+
+
+        // Alterar senha do subusuário
+        document.querySelectorAll('.form-alterar-senha').forEach(form => {
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const row = event.target.closest('tr');
+                const subusuarioId = row.dataset.id;
+                const novaSenha = form.querySelector('input[name="nova_senha"]').value;
+
+                const response = await fetch(`/subusuarios/alterar_senha/${subusuarioId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nova_senha: novaSenha })
+                });
+
+                if (response.ok) {
+                    alert('Senha alterada com sucesso!');
+                    form.reset();
+                } else {
+                    alert('Erro ao alterar senha.');
+                }
+            });
+        });
+    });
+</script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+
+{% endblock %}

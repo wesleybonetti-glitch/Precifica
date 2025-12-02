@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}{{ produto.nome }} - Detalhes{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-eye"></i> Visualização Completa do Produto</h2>
+                <a href="{{ url_for('listar_produtos_fornecedores') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Voltar
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Foto do Produto -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-camera"></i> Foto</h5>
+                </div>
+                <div class="card-body text-center">
+                    {% if detalhes.foto_url %}
+                        <img src="{{ detalhes.foto_url }}" alt="Foto do produto"
+                             class="img-fluid rounded" style="max-height: 300px;">
+                    {% else %}
+                        <div class="bg-light border rounded d-flex align-items-center justify-content-center"
+                             style="height: 200px;">
+                            <div class="text-muted">
+                                <i class="fas fa-image fa-3x mb-2"></i>
+                                <p>Sem foto</p>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Informações do Produto -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Informações</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless">
+                        <tr>
+                            <th width="150">Nome:</th>
+                            <td><strong>{{ produto.nome }}</strong></td>
+                        </tr>
+                        <tr>
+                            <th>Marca:</th>
+                            <td>{{ produto.marca or '-' }}</td>
+                        </tr>
+                        <tr>
+                            <th>Modelo:</th>
+                            <td>{{ produto.modelo or '-' }}</td>
+                        </tr>
+                        <tr>
+                            <th>Unidade:</th>
+                            <td><span class="badge bg-secondary">{{ produto.unidade_medida or 'UN' }}</span></td>
+                        </tr>
+                        <tr>
+                            <th>Custo:</th>
+                            <td><strong class="text-success">R$ {{ "{:,.2f}".format(produto.custo).replace(",", "X").replace(".", ",").replace("X", ".") }}</strong></td>
+                        </tr>
+                        <tr>
+                            <th>Fornecedor:</th>
+                            <td>
+                                {% if fornecedor %}
+                                    <span class="badge bg-primary">{{ fornecedor.nome_empresa }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Sem fornecedor</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Descrição Detalhada -->
+    {% if detalhes.descricao_detalhada %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-align-left"></i> Descrição Detalhada</h5>
+                </div>
+                <div class="card-body">
+                    <div style="white-space: pre-wrap;">{{ detalhes.descricao_detalhada }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Ações -->
+    <div class="row mt-4">
+        <div class="col-12 text-center">
+            <div class="btn-group">
+                <button class="btn btn-warning" onclick="window.print()">
+                    <i class="fas fa-print"></i> Imprimir
+                </button>
+                <a href="{{ url_for('listar_produtos_fornecedores') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Voltar à Lista
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@media print {
+    .btn, .navbar, .sidebar {
+        display: none !important;
+    }
+    .container {
+        max-width: 100% !important;
+    }
+}
+</style>
+{% endblock %}

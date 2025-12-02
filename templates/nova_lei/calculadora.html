@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+
+{% block title %}Calculadora de Serviços - Nova Lei{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="text-center mt-4">
+        <i class="fas fa-calculator text-primary"></i>
+        Calculadora de Serviços - Nova Lei
+    </h1>
+    <p class="text-center text-muted">Planilha de custos e formação de preços para serviços de mão de obra</p>
+
+    <!-- Campo hidden para ID do cenário (modo edição) -->
+    {% if cenario %}
+    <input type="hidden" id="cenario_id_edicao" value="{{ cenario.id }}">
+    {% endif %}
+
+    <!-- Passo 1: Dados da Empresa e Órgão -->
+    <div id="passo1" style="display: block;">
+        <div class="card shadow-sm mt-4">
+            <div class="card-header bg-primary text-white">
+                <h2 class="mb-0">
+                    <i class="fas fa-building"></i>
+                    Passo 1: Dados da Empresa e Órgão
+                </h2>
+            </div>
+            <div class="card-body">
+                <form id="formPasso1" class="row g-3">
+                    <!-- Dados da Empresa -->
+                    <div class="col-12">
+                        <h5 class="border-bottom pb-2 mb-3">
+                            <i class="fas fa-industry text-primary"></i>
+                            Dados da Empresa
+                        </h5>
+                    </div>
+
+                    <div class="col-12">
+                        <label for="cnpj" class="form-label">
+                            <i class="fas fa-id-card text-muted"></i>
+                            CNPJ
+                        </label>
+                        <div class="input-group">
+                            <input type="text" id="cnpj" name="cnpj" class="form-control"
+                                   placeholder="00.000.000/0000-00" required>
+                            <button type="button" id="consultarCNPJ" class="btn btn-outline-primary">
+                                <i class="fas fa-search"></i>
+                                Consultar
+                            </button>
+                        </div>
+                        <div class="form-text">Digite apenas números</div>
+                    </div>
+
+                    <div class="col-12">
+                        <label for="razao_social" class="form-label">
+                            <i class="fas fa-building text-muted"></i>
+                            Razão Social
+                        </label>
+                        <input type="text" id="razao_social" name="razao_social"
+                               class="form-control" readonly>
+                    </div>
+
+                    <div class="col-12">
+                        <label for="endereco" class="form-label">
+                            <i class="fas fa-map-marker-alt text-muted"></i>
+                            Endereço
+                        </label>
+                        <textarea id="endereco" name="endereco" class="form-control"
+                                  rows="3" readonly></textarea>
+                    </div>
+
+                    <!-- Dados do Órgão/Processo -->
+                    <div class="col-12 mt-4">
+                        <h5 class="border-bottom pb-2 mb-3">
+                            <i class="fas fa-landmark text-primary"></i>
+                            Dados do Órgão e Processo
+                        </h5>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="numero_processo" class="form-label">
+                            <i class="fas fa-file-alt text-muted"></i>
+                            Número do Processo
+                        </label>
+                        <input type="text" id="numero_processo" name="numero_processo"
+                               class="form-control" placeholder="Ex: 001/2024" required>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="validade_proposta" class="form-label">
+                            <i class="fas fa-calendar text-muted"></i>
+                            Validade da Proposta (dias)
+                        </label>
+                        <input type="number" id="validade_proposta" name="validade_proposta"
+                               class="form-control" placeholder="60" min="1" required>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="prazo_pagamento" class="form-label">
+                            <i class="fas fa-credit-card text-muted"></i>
+                            Prazo de Pagamento
+                        </label>
+                        <input type="text" id="prazo_pagamento" name="prazo_pagamento"
+                               class="form-control" placeholder="Ex: 30 dias" required>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="local_execucao" class="form-label">
+                            <i class="fas fa-map-pin text-muted"></i>
+                            Local de Execução
+                        </label>
+                        <input type="text" id="local_execucao" name="local_execucao"
+                               class="form-control" placeholder="Ex: São Paulo - SP" required>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="prazo_execucao" class="form-label">
+                            <i class="fas fa-clock text-muted"></i>
+                            Prazo de Execução (meses)
+                        </label>
+                        <input type="number" id="prazo_execucao" name="prazo_execucao"
+                               class="form-control" placeholder="12" min="1" required>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="tipo_servico" class="form-label">
+                            <i class="fas fa-briefcase text-muted"></i>
+                            Tipo de Serviço
+                            <button type="button" class="btn btn-sm btn-link p-0" 
+                                    data-bs-toggle="tooltip" 
+                                    title="Selecione o tipo de serviço ou use um preset">
+                                <i class="fas fa-info-circle"></i>
+                            </button>
+                        </label>
+                        <select class="form-select" id="tipo_servico" name="tipo_servico" required>
+                            <option value="">Selecione...</option>
+                            <option value="Portaria">Portaria</option>
+                            <option value="Limpeza">Limpeza</option>
+                            <option value="Copeiragem">Copeiragem</option>
+                            <option value="Zeladoria">Zeladoria</option>
+                            <option value="Motorista">Motorista</option>
+                            <option value="Camareiro">Camareiro</option>
+                            <option value="Maqueiro">Maqueiro</option>
+                            <option value="Outro">Outro</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12 text-center mt-4">
+                        <button type="button" id="salvarPasso1" class="btn btn-success btn-lg">
+                            <i class="fas fa-arrow-right"></i>
+                            Salvar e Avançar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Passo 2: Cadastro de Lotes e Postos -->
+    <div id="passo2" style="display: none;">
+        <div class="card shadow-sm mt-4">
+            <div class="card-header bg-success text-white">
+                <h2 class="mb-0">
+                    <i class="fas fa-users"></i>
+                    Passo 2: Cadastro de Lotes e Postos de Trabalho
+                </h2>
+            </div>
+            <div class="card-body">
+                <!-- Progresso -->
+                <div class="progress mb-4" style="height: 8px;">
+                    <div class="progress-bar bg-success" role="progressbar"
+                         style="width: 100%" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+
+                <!-- Lotes Container -->
+                <div id="lotesContainer"></div>
+
+                <div class="text-center mt-3">
+                    <button type="button" id="adicionarLote" class="btn btn-primary btn-lg">
+                        <i class="fas fa-plus-circle"></i>
+                        Adicionar Lote
+                    </button>
+                </div>
+
+                <!-- Parâmetros Gerais -->
+                <div class="card mt-4">
+                    <div class="card-header bg-info text-white">
+                        <h3 class="mb-0">
+                            <i class="fas fa-sliders-h"></i>
+                            Parâmetros Gerais
+                            <button type="button" class="btn btn-sm btn-light float-end" 
+                                    data-bs-toggle="collapse" data-bs-target="#parametrosCollapse">
+                                <i class="fas fa-chevron-down"></i>
+                            </button>
+                        </h3>
+                    </div>
+                    <div class="collapse show" id="parametrosCollapse">
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <!-- Encargos Previdenciários -->
+                                <div class="col-12">
+                                    <h6 class="text-primary">
+                                        <i class="fas fa-percentage"></i>
+                                        Encargos Previdenciários/Terceiros
+                                    </h6>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">INSS Patronal (%)</label>
+                                    <input type="number" class="form-control" id="inss_patronal" value="20.0" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Salário-Educação (%)</label>
+                                    <input type="number" class="form-control" id="salario_educacao" value="2.5" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">RAT/SAT (%)</label>
+                                    <input type="number" class="form-control" id="rat_sat" value="3.0" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">FAP (Multiplicador)</label>
+                                    <input type="number" class="form-control" id="fap" value="1.0" step="0.01">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">SESC/SENAC (%)</label>
+                                    <input type="number" class="form-control" id="sesc_senac" value="1.5" step="0.1">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">SEBRAE (%)</label>
+                                    <input type="number" class="form-control" id="sebrae" value="0.6" step="0.1">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">INCRA (%)</label>
+                                    <input type="number" class="form-control" id="incra" value="0.2" step="0.1">
+                                </div>
+
+                                <!-- Regime Tributário -->
+                                <div class="col-12 mt-3">
+                                    <h6 class="text-primary">
+                                        <i class="fas fa-file-invoice-dollar"></i>
+                                        Regime Tributário
+                                    </h6>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Regime</label>
+                                    <select class="form-select" id="regime_tributario" onchange="atualizarCamposTributos()">
+                                        <option value="simples">Simples Nacional - Anexo IV</option>
+                                        <option value="presumido">Lucro Presumido</option>
+                                        <option value="real">Lucro Real</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2" id="campo-pis">
+                                    <label class="form-label">PIS (%)</label>
+                                    <input type="number" class="form-control" id="aliquota_pis" value="0.65" step="0.01">
+                                </div>
+                                <div class="col-md-2" id="campo-cofins">
+                                    <label class="form-label">COFINS (%)</label>
+                                    <input type="number" class="form-control" id="aliquota_cofins" value="3.0" step="0.01">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">ISS (%)</label>
+                                    <input type="number" class="form-control" id="aliquota_iss" value="5.0" step="0.1">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Alíquota Simples (%)</label>
+                                    <input type="number" class="form-control" id="aliquota_simples" value="14.0" step="0.1">
+                                </div>
+
+                                <!-- CITL -->
+                                <div class="col-12 mt-3">
+                                    <h6 class="text-primary">
+                                        <i class="fas fa-chart-pie"></i>
+                                        CITL (Custos Indiretos, Tributos e Lucro)
+                                    </h6>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Custos Indiretos (%)</label>
+                                    <input type="number" class="form-control" id="custos_indiretos" value="5.0" step="0.1">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Lucro (%)</label>
+                                    <input type="number" class="form-control" id="lucro_percentual" value="8.0" step="0.1" onchange="atualizarResumo()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resumo Financeiro -->
+                <div class="card mt-4">
+                    <div class="card-header bg-info text-white">
+                        <h3 class="mb-0">
+                            <i class="fas fa-chart-line"></i>
+                            Resumo Financeiro
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="card border-danger">
+                                    <div class="card-header bg-danger text-white">
+                                        <h5 class="mb-0">
+                                            <i class="fas fa-minus-circle"></i>
+                                            Custos
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm mb-0">
+                                            <tr>
+                                                <th>Remuneração Total</th>
+                                                <td id="resumoRemuneracao" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Encargos e Benefícios</th>
+                                                <td id="resumoEncargos" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Provisões</th>
+                                                <td id="resumoProvisoes" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Reposição</th>
+                                                <td id="resumoReposicao" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Insumos</th>
+                                                <td id="resumoInsumos" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                            <tr class="table-danger">
+                                                <th><strong>Subtotal</strong></th>
+                                                <td id="resumoSubtotal" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card border-success">
+                                    <div class="card-header bg-success text-white">
+                                        <h5 class="mb-0">
+                                            <i class="fas fa-plus-circle"></i>
+                                            Preço Final
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm mb-0">
+                                            <tr>
+                                                <th>Custos Indiretos</th>
+                                                <td id="resumoCustosIndiretos" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Tributos</th>
+                                                <td id="resumoTributos" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Lucro</th>
+                                                <td id="resumoLucro" class="text-end fw-bold">R$ 0,00</td>
+                                            </tr>
+                                            <tr class="table-success">
+                                                <th><strong>Preço Total</strong></th>
+                                                <td id="resumoPrecoTotal" class="text-end fw-bold fs-5">R$ 0,00</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Margem de Lucro</th>
+                                                <td id="resumoMargemLucro" class="text-end fw-bold">0%</td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Finalizar -->
+                <div class="text-center mt-4">
+                    <button type="button" id="finalizarPrecificacao" class="btn btn-success btn-lg">
+                        <i class="fas fa-check-circle"></i>
+                        Finalizar Precificação
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Recuperação de Sessão -->
+<div class="modal fade" id="recoveryModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-history"></i> Recuperar Sessão
+                </h5>
+            </div>
+            <div class="modal-body text-center">
+                <i class="fas fa-save fa-3x text-primary mb-3"></i>
+                <h6>Encontramos uma precificação em andamento!</h6>
+                <p class="text-muted">Você gostaria de continuar de onde parou ou iniciar uma nova precificação?</p>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-success me-2" id="continuarSessao">
+                    <i class="fas fa-play"></i> Continuar
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="novaSessao">
+                    <i class="fas fa-plus"></i> Nova Precificação
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast para Notificações -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="autoSaveToast" class="toast" role="alert">
+        <div class="toast-header bg-success text-white">
+            <i class="fas fa-save me-2"></i>
+            <strong class="me-auto">Salvamento Automático</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body">
+            Dados salvos automaticamente!
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/calculadora_nova_lei.js') }}"></script>
+<script src="{{ url_for('static', filename='js/calculadora_edicao.js') }}"></script>
+{% endblock %}

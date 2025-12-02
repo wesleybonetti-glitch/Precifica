@@ -1,0 +1,12135 @@
+# ========================================
+# IMPORTS ORGANIZADOS (SEM REDUNDÂNCIAS)
+# ========================================
+from dotenv import load_dotenv
+
+load_dotenv()
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_file, Blueprint, g, \
+    make_response, send_from_directory
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_bcrypt import Bcrypt
+from flask_cors import CORS
+from flask_migrate import Migrate
+from flask_mail import Mail, Message
+
+from datetime import datetime, timedelta
+from decimal import Decimal
+import os
+import requests
+import logging
+import time
+import tempfile
+import csv
+import io
+import json
+import re
+import pandas as pd
+
+from werkzeug.utils import secure_filename
+from PIL import Image
+from PyPDF2 import PdfMerger
+from io import BytesIO
+from zipfile import ZipFile
+from sqlalchemy import func
+
+# ReportLab imports
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+# Configurações e modelos
+from config import Config
+from models import (db, User, Subusuario, Registro, LogAcesso, Empresa, CalculadoraPasso1,
+                    CalculadoraPasso1Servicos, Produto, Documento, Fornecedor, AvaliacaoFornecedor,
+                    Banner, ChamadoSuporte, RespostaChamado, ProdutosFornecedores, FornecedorProdutos,
+                    Lote, Servico, Despesa, CalculadoraSessao, CalculadoraSessaoServicos,
+                    limpar_sessao_servicos_atual, ProdutoDetalhes
+                    )
+import leitor_edital  # Importa o novo módulo
+from leitor_edital import extrair_texto_de_pdf, analisar_edital_com_ia
+from gerenciador_chaves_api import inicializar_gerenciador
+
+# OpenAI (se usado)
+# Importa o Blueprint do módulo de licitações
+
+app = Flask(__name__, static_folder='static')
+app.config.from_object(Config)
+
+# --- ADICIONE A LINHA ABAIXO (A CORREÇÃO DEFINITIVA) ---
+app.config['GEMINI_API_KEY'] = os.environ.get('GEMINI_API_KEY')
+CORS(app, resources={r"*": {"origins": "*"}})
+
+# Configuração para o Flask-Mail
+mail = Mail(app)
+app.config["APPLICATION_ROOT"] = "/precificaja"
+
+APPLICATION_ROOT = "/precificaja"
+
+# Configuração de logging
+logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s in %(module)s: %(message)s")
+
+# Blueprint
+precificaja_bp = Blueprint("precificaja", __name__, url_prefix="/precificaja")
+
+# ========================================
+# CONFIGURAÇÕES DE UPLOAD COMPATÍVEIS
+# ========================================
+
+# Diretório base para uploads (ORIGINAL - COMPATÍVEL)
+BASE_UPLOAD_FOLDER = os.path.join(os.path.abspath(os.path.dirname(__file__)), "static", "uploads")
+EMPRESA_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "empresa")
+
+# Pastas originais (MANTER PARA COMPATIBILIDADE)
+DOCUMENT_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "documentos")
+CHAMADOS_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "chamados")
+RESPOSTAS_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "respostas_chamados")
+EDITAL_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "editais")
+PRODUTOS_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "produtos")
+FORNECEDORES_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "fornecedores")
+os.makedirs(EMPRESA_UPLOAD_FOLDER, exist_ok=True)  # cria a pasta se não existir
+
+# Prefixos de rota
+PRODUTO_PREFIX = "/precificaja/produto"
+SERVICO_PREFIX = "/precificaja/servico"
+
+# Configuração Flask
+app.config["UPLOAD_FOLDER"] = BASE_UPLOAD_FOLDER
+app.config["EDITAL_UPLOAD_FOLDER"] = EDITAL_UPLOAD_FOLDER  # <<< A CHAVE QUE FALTAVA
+
+# Extensões permitidas
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'csv', 'pdf', 'doc', 'docx'}
+
+# ========================================
+# CRIAÇÃO DE DIRETÓRIOS
+# ========================================
+
+# Criar todos os diretórios necessários
+os.makedirs(DOCUMENT_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(CHAMADOS_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(RESPOSTAS_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PRODUTOS_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(FORNECEDORES_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(app.config['EDITAL_UPLOAD_FOLDER'], exist_ok=True)
+
+# ========================================
+# INICIALIZAÇÃO DE EXTENSÕES
+# ========================================
+
+db.init_app(app)
+bcrypt = Bcrypt(app)
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message = "Por favor, faça login para acessar esta página."
+login_manager.login_message_category = "info"
+migrate = Migrate(app, db)
+
+# Registra as rotas do módulo de licitações sob o prefixo /licitacoes
+# SEÇÃO CORRIGIDA
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+# Define o caminho para a pasta do banco de dados
+db_path = os.path.join(basedir, 'licitacoes_app', 'src', 'database')
+
+# Garante que a pasta exista antes de tentar usá-la
+os.makedirs(db_path, exist_ok=True)
+
+# Agora, define a URI usando o caminho que sabemos que existe
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(db_path, 'app.db')
+
+# Inicializa o SQLAlchemy do módulo usando sua app principal
+from models_nova_lei import SvcScenario, SvcJob, SvcBenefit, SvcInsumo, SvcOutput
+from routes_nova_lei import registrar_blueprint as registrar_blueprint_nova_lei
+
+registrar_blueprint_nova_lei(app)
+
+# Garante que as tabelas (licitacoes, calculos) existam
+with app.app_context():
+    db.create_all()
+from flask import send_from_directory
+
+LIC_STATIC_DIR = os.path.join(basedir, 'licitacoes_app', 'src', 'static')
+# app.py (imports usuais)
+from flask import request, redirect, url_for, session, g, current_app
+from datetime import timedelta
+
+# ========================================
+# CONTROLE DE AUTENTICAÇÃO CENTRALIZADO
+# ========================================
+
+# Listas de rotas e blueprints que não exigem login
+PUBLIC_PATH_PREFIXES = (
+    "/login",
+    "/logout",
+    "/static/",
+    "/favicon.ico",
+    "/apple-touch-icon",
+    "/__debugger__",
+    "/servicos/v2",
+    "/api/v2/servicos",
+    "/precificaja/webhook",
+    "/webhooks/",
+    "/webhook",
+    "/precificaja/esqueci-senha",
+    "/precificaja/redefinir-senha",
+    "/esqueci-senha",
+    "/redefinir-senha",
+    '/gerenciar_banners',
+    '/precificaja/gerenciar_banners',
+    '/precificaja/chamados/admin',
+    '/precificaja/chamados/ver_anexo/',
+    '/precificaja/chamados/ver_anexo_resposta/'
+)
+PUBLIC_ENDPOINTS = {"static", "login", "esqueci_senha", "redefinir_senha"}
+PUBLIC_BLUEPRINTS = {"servicos_v2", "servicos_v2_api"}
+
+
+@app.route('/facilities/static/<path:filename>')
+def facilities_static(filename):
+    return send_from_directory(
+        os.path.join(app.root_path, 'facilities', 'static'),
+        filename
+    )
+
+
+# Função de autenticação única e corrigida
+@app.before_request
+def auth_gate():
+    # Não aplicar o gate de autenticação para requisições OPTIONS (CORS preflight)
+    if request.method == 'OPTIONS':
+        return
+
+    path = (request.path or "/").lower()
+
+    # 1) Libera rotas públicas
+    if any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES) or \
+            request.endpoint in PUBLIC_ENDPOINTS or \
+            request.blueprint in PUBLIC_BLUEPRINTS:
+        return None
+
+    # 2) Se o usuário já está autenticado via Flask-Login, permite o acesso
+    if current_user.is_authenticated:
+        return None
+
+    # 3) Se for uma API (AJAX) e não autenticada, retorna um erro JSON (EVITA O REDIRECIONAMENTO)
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or "/api/" in path:
+        return jsonify(error='Sessão expirada, por favor, faça login novamente.'), 401
+
+    # 4) Para todas as outras páginas, redireciona para o login
+    next_url = request.full_path if request.method == 'GET' else url_for(request.endpoint)
+    return redirect(url_for("login", next=next_url))
+
+
+# Abre a interface do módulo
+@app.route('/licitacoes')
+def licitacoes_index():
+    return send_from_directory(LIC_STATIC_DIR, 'index.html')
+
+
+# Serve CSS/JS/imagens do módulo
+@app.route('/licitacoes/<path:path>')
+def licitacoes_static(path):
+    return send_from_directory(LIC_STATIC_DIR, path)
+
+
+def allowed_file(filename):
+    """
+    Verifica se o arquivo tem extensão permitida
+
+    Extensões permitidas:
+    - Imagens: png, jpg, jpeg, gif, webp
+    - Documentos: pdf, doc, docx
+    - Dados: csv, xlsx, xls
+    """
+    if not filename or '.' not in filename:
+        return False
+
+    extensao = filename.rsplit('.', 1)[1].lower()
+
+    # Lista completa de extensões permitidas
+    extensoes_permitidas = {
+        'png', 'jpg', 'jpeg', 'gif', 'webp',  # Imagens
+        'pdf', 'doc', 'docx',  # Documentos
+        'csv', 'xlsx', 'xls'  # Dados
+    }
+
+    resultado = extensao in extensoes_permitidas
+
+    # Log para debug
+    if not resultado:
+        print(f"⚠️  Extensão '{extensao}' não permitida. Permitidas: {extensoes_permitidas}")
+
+    return resultado
+
+
+# ========================================
+# FUNÇÕES AUXILIARES DE UPLOAD
+# ================
+
+
+def salvar_arquivo(arquivo, pasta_destino):
+    """Função original para salvar arquivos (compatibilidade)"""
+    if not arquivo or arquivo.filename == '':
+        return None
+
+    filename = secure_filename(arquivo.filename)
+    pasta_destino = os.path.join(BASE_UPLOAD_FOLDER, os.path.basename(pasta_destino))
+    os.makedirs(pasta_destino, exist_ok=True)
+
+    filepath = os.path.join(pasta_destino, filename)
+
+    try:
+        arquivo.save(filepath)
+        logging.info(f"Arquivo salvo corretamente em: {filepath}")
+        return filename  # Retorna só o nome do arquivo (ORIGINAL)
+    except Exception as e:
+        logging.error(f"Erro ao salvar arquivo: {e}")
+        return None
+
+
+def salvar_foto_produto(arquivo, produto_id):
+    """Função específica para salvar fotos de produtos"""
+    if not arquivo or arquivo.filename == '':
+        return None
+
+    # Gerar nome único
+    timestamp = int(time.time())
+    extension = arquivo.filename.rsplit('.', 1)[1].lower()
+    filename = secure_filename(f"produto_{produto_id}_{timestamp}.{extension}")
+
+    # Usar pasta específica de produtos
+    filepath = os.path.join(PRODUTOS_UPLOAD_FOLDER, filename)
+
+    try:
+        arquivo.save(filepath)
+        logging.info(f"Foto do produto salva em: {filepath}")
+
+        # Retornar URL relativa para compatibilidade
+        return f"/static/uploads/produtos/{filename}"
+    except Exception as e:
+        logging.error(f"Erro ao salvar foto do produto: {e}")
+        return None
+
+
+# Gerenciar usuário logado
+@login_manager.user_loader
+def load_user(user_id):
+    user_type = session.get("user_type")
+
+    if user_type == "user":
+        usuario = db.session.get(User, int(user_id))
+        app.logger.info(
+            f"🔄 Carregando usuário principal: {usuario.id} - {usuario.nome}" if usuario else "Usuário não encontrado")
+        return usuario
+
+    if user_type == "subusuario":
+        subusuario = db.session.get(Subusuario, int(user_id))
+        app.logger.info(
+            f"🔄 Carregando subusuário: {subusuario.id} - {subusuario.nome}" if subusuario else "Subusuário não encontrado")
+        return subusuario
+
+    return None
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        # CORREÇÃO APLICADA AQUI
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        # Normaliza o e-mail: remove espaços e converte para minúsculas
+        email = request.form.get("email", "").strip().lower()
+        senha = request.form.get("senha")
+
+        if not email or not senha:
+            flash("E-mail e senha são obrigatórios.", "danger")
+            return render_template("login.html")
+
+        usuario = autenticar_usuario(email, senha)
+        if usuario:
+            login_user(usuario)
+            session["user_type"] = "user" if isinstance(usuario, User) else "subusuario"
+            session["user_id"] = usuario.id
+            app.logger.info(f"✅ Usuário logado: {usuario.id} - {usuario.nome} - Tipo: {session['user_type']}")
+
+            next_page = request.args.get('next')
+            # CORREÇÃO APLICADA AQUI
+            return redirect(next_page or url_for("dashboard"))
+        else:
+            # A mensagem de log já está na função autenticar_usuario
+            flash("Credenciais inválidas! Verifique seu e-mail e senha.", "danger")
+
+    return render_template("login.html")
+
+
+def autenticar_usuario(email, senha):
+    """
+    Autentica um usuário (principal ou sub) a partir de um e-mail já normalizado.
+    """
+    # Tenta encontrar um usuário principal
+    user = User.query.filter_by(email=email).first()
+    if user and bcrypt.check_password_hash(user.senha, senha):
+        app.logger.info(f"🟢 Usuário principal autenticado: ID {user.id}")
+        return user
+
+    # Se não encontrar, tenta um subusuário
+    subuser = Subusuario.query.filter_by(email=email).first()
+    if subuser and bcrypt.check_password_hash(subuser.senha, senha):
+        app.logger.info(f"🟢 Subusuário autenticado: ID {subuser.id}")
+        return subuser
+
+    # Se não encontrar nenhum, loga o erro
+    app.logger.warning(f"🔴 Falha na autenticação: E-mail não encontrado ou senha inválida para '{email}'")
+    return None
+
+
+@app.route("/precificaja/esqueci-senha", methods=["GET", "POST"])
+def esqueci_senha():
+    if request.method == "POST":
+        email = request.form.get("email")
+        user = User.query.filter_by(email=email).first()
+
+        if user:
+            token = serializer.dumps(email, salt="redefinir-senha")
+            link = url_for("redefinir_senha", token=token, _external=True)
+
+            try:
+                msg = Message(
+                    "Redefinição de Senha - PrecificaJá",
+                    sender=app.config["MAIL_USERNAME"],
+                    recipients=[email]
+                )
+                msg.body = f"""
+                Olá,
+
+                Clique no link abaixo para redefinir sua senha:
+
+                {link}
+
+                Se você não solicitou isso, ignore esta mensagem.
+
+                Atenciosamente,
+                Equipe PrecificaJá
+                """
+                mail.send(msg)
+                flash("Instruções para redefinir sua senha foram enviadas para seu e-mail.", "success")
+            except Exception as e:
+                app.logger.error(f"Erro ao enviar e-mail de redefinição: {e}")
+                flash("Erro ao enviar e-mail. Tente novamente mais tarde.", "danger")
+        else:
+            flash("E-mail não encontrado.", "danger")
+
+    return render_template("esqueci_senha.html")
+
+
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+from flask import render_template, request, redirect, url_for, flash
+from models import db, User
+from flask_bcrypt import Bcrypt
+
+bcrypt = Bcrypt()
+serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
+
+
+@app.route("/precificaja/redefinir-senha/<token>", methods=["GET", "POST"])
+def redefinir_senha(token):
+    try:
+        email = serializer.loads(token, salt="redefinir-senha", max_age=3600)  # 1 hora de validade
+    except SignatureExpired:
+        flash("Este link expirou. Solicite uma nova redefinição de senha.", "danger")
+        return redirect(url_for("esqueci_senha"))
+    except BadSignature:
+        flash("Link inválido. Solicite uma nova redefinição de senha.", "danger")
+        return redirect(url_for("esqueci_senha"))
+
+    if request.method == "POST":
+        nova_senha = request.form.get("senha")
+        if not nova_senha:
+            flash("Por favor, insira uma nova senha.", "warning")
+            return render_template("redefinir_senha.html")
+
+        user = User.query.filter_by(email=email).first()
+        if user:
+            user.senha = bcrypt.generate_password_hash(nova_senha).decode("utf-8")
+            db.session.commit()
+            flash("Senha redefinida com sucesso! Agora você pode fazer login.", "success")
+            return redirect(url_for("login"))
+        else:
+            flash("Usuário não encontrado.", "danger")
+            return redirect(url_for("esqueci_senha"))
+
+    return render_template("redefinir_senha.html")
+
+
+# Blueprint para APIs
+api_bp = Blueprint("api", __name__)
+
+
+@api_bp.route("/api/produto_busca", methods=["GET"])
+@login_required
+def produto_busca():
+    query = request.args.get("query", "").strip()
+    if not query:
+        return jsonify([])
+
+    produtos = Produto.query.filter(Produto.marca_modelo.like(f"%{query}%")).limit(5).all()
+
+    resultados = [
+        {
+            "marca_modelo": produto.marca_modelo,
+            "produto": produto.produto,
+            "custo_direto": produto.custo_direto,
+            "porcentagem_imposto": produto.porcentagem_imposto,
+            "margem_lucro": produto.margem_lucro,
+            "quantidade": produto.quantidade
+        }
+        for produto in produtos
+    ]
+    return jsonify(resultados)
+
+
+# Registro do Blueprint no app
+app.register_blueprint(api_bp)
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    session.pop("user_type", None)
+    session.pop("user_id", None)
+    logout_user()
+    flash("Você saiu da sua conta com sucesso.", "info")
+    return redirect(url_for("login"))
+
+
+# --- IMPORTS NECESSÁRIOS (verifique se já existem no topo do seu app.py) ---
+from models import CalculadoraPasso1, CalculadoraPasso1Servicos, ProdutosFornecedores, FornecedorProdutos, \
+    ChamadoSuporte
+from sqlalchemy import func, extract, union_all
+from datetime import datetime, timedelta, timezone
+import json
+
+
+# ... (resto do seu código do app.py) ...
+
+@app.route('/precificaja/dashboard')
+@login_required
+def dashboard():
+    try:
+        user_id = current_user.id
+
+        # --- 1. KPIs Consolidados (Cards) ---
+        total_propostas_produtos = db.session.query(func.count(CalculadoraPasso1.id)).filter_by(
+            user_id=user_id).scalar()
+        total_propostas_servicos = db.session.query(func.count(CalculadoraPasso1Servicos.id)).filter_by(
+            user_id=user_id).scalar()
+        total_propostas = total_propostas_produtos + total_propostas_servicos
+
+        total_produtos = db.session.query(func.count(ProdutosFornecedores.id)).filter_by(user_id=user_id).scalar()
+        total_fornecedores = db.session.query(func.count(FornecedorProdutos.id)).filter_by(user_id=user_id).scalar()
+        chamados_abertos = db.session.query(func.count(ChamadoSuporte.id)).filter_by(usuario_id=user_id,
+                                                                                     status='Aberto').scalar()
+
+        # --- 2. Gráfico Consolidado de Propostas por Mês (Últimos 12 meses) ---
+        today = datetime.now(timezone.utc)
+        last_12_months = today - timedelta(days=365)
+
+        # Query para propostas de produtos
+        query_produtos = db.session.query(
+            extract('year', CalculadoraPasso1.criado_em).label('year'),
+            extract('month', CalculadoraPasso1.criado_em).label('month')
+        ).filter(CalculadoraPasso1.user_id == user_id, CalculadoraPasso1.criado_em >= last_12_months)
+
+        # Query para propostas de serviços (ambas as calculadoras)
+        query_servicos = db.session.query(
+            extract('year', CalculadoraPasso1Servicos.criado_em).label('year'),
+            extract('month', CalculadoraPasso1Servicos.criado_em).label('month')
+        ).filter(CalculadoraPasso1Servicos.user_id == user_id, CalculadoraPasso1Servicos.criado_em >= last_12_months)
+
+        # Unifica as duas queries
+        unioned_query = union_all(query_produtos, query_servicos).alias('propostas_unificadas')
+
+        propostas_por_mes_query = db.session.query(
+            unioned_query.c.year,
+            unioned_query.c.month,
+            func.count().label('total_count')
+        ).group_by(unioned_query.c.year, unioned_query.c.month).all()
+
+        # Estrutura para formatar os dados para o gráfico
+        chart_data = {}
+        for i in range(12):
+            dt = today - timedelta(days=i * 30)
+            chart_data[f"{dt.year}-{dt.month:02d}"] = 0
+
+        for ano, mes, total in propostas_por_mes_query:
+            if ano is not None and mes is not None:
+                chart_data[f"{int(ano)}-{int(mes):02d}"] = total
+
+        sorted_chart_data = sorted(chart_data.items())[-12:]  # Garante apenas os últimos 12 meses
+
+        meses_dict = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set',
+                      10: 'Out', 11: 'Nov', 12: 'Dez'}
+        labels_meses = [f"{meses_dict[int(key.split('-')[1])]}/{key.split('-')[0][2:]}" for key, value in
+                        sorted_chart_data]
+        valores_meses = [value for key, value in sorted_chart_data]
+
+        # --- 3. Gráfico Consolidado de Status das Propostas (Pizza) ---
+        status_produtos = db.session.query(CalculadoraPasso1.status, func.count(CalculadoraPasso1.id)).filter_by(
+            user_id=user_id).group_by(CalculadoraPasso1.status).all()
+        status_servicos = db.session.query(CalculadoraPasso1Servicos.status,
+                                           func.count(CalculadoraPasso1Servicos.id)).filter_by(
+            user_id=user_id).group_by(CalculadoraPasso1Servicos.status).all()
+
+        status_agregado = {}
+        for status, count in status_produtos + status_servicos:
+            status_agregado[status] = status_agregado.get(status, 0) + count
+
+        labels_status = list(status_agregado.keys())
+        valores_status = list(status_agregado.values())
+        cores_status = ['#007bff', '#28a745', '#dc3545', '#ffc107', '#17a2b8', '#6c757d']
+
+        # --- 4. Tabela de Atividades Recentes ---
+        ultimas_propostas_produtos = CalculadoraPasso1.query.filter_by(user_id=user_id).order_by(
+            CalculadoraPasso1.criado_em.desc()).limit(3).all()
+        ultimas_propostas_servicos = CalculadoraPasso1Servicos.query.filter_by(user_id=user_id).order_by(
+            CalculadoraPasso1Servicos.criado_em.desc()).limit(3).all()
+
+        # Adiciona um atributo 'tipo' para diferenciar no template
+        for p in ultimas_propostas_produtos: p.tipo = 'Produto'
+        for s in ultimas_propostas_servicos: s.tipo = 'Serviço'
+
+        ultimas_propostas = sorted(ultimas_propostas_produtos + ultimas_propostas_servicos, key=lambda x: x.criado_em,
+                                   reverse=True)[:5]
+
+        return render_template('dashboard.html',
+                               total_propostas=total_propostas,
+                               total_produtos=total_produtos,
+                               total_fornecedores=total_fornecedores,
+                               chamados_abertos=chamados_abertos,
+                               ultimas_propostas=ultimas_propostas,
+                               labels_meses=json.dumps(labels_meses),
+                               valores_meses=json.dumps(valores_meses),
+                               labels_status=json.dumps(labels_status),
+                               valores_status=json.dumps(valores_status),
+                               cores_status=json.dumps(cores_status)
+                               )
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar o dashboard: {e}", exc_info=True)
+        return f"Ocorreu um erro ao carregar as informações do dashboard: {e}", 500
+
+
+# ... (seu código existente)
+
+
+# Adicione esta nova rota dentro do seu precificaja_bp
+@precificaja_bp.route("/licitacao/<int:licitacao_id>")
+@login_required
+def ver_licitacao_detalhes(licitacao_id):
+    licitacao = CalculadoraPasso1.query.get_or_404(licitacao_id)
+    # Você pode adicionar mais lógica aqui para buscar dados relacionados, se necessário
+    return render_template("licitacao_detalhes.html", licitacao=licitacao)
+
+
+# ... (o restante do seu código)
+
+# Se você tiver a parte 'if __name__ == "__main__":', ela deve vir depois de tudo isso.
+# Exemplo:
+# if __name__ == "__main__":
+#     app.run(debug=True)
+
+@app.route('/precificaja/subusuarios', methods=['GET', 'POST'])
+@login_required
+def subusuarios():
+    if session.get('user_type') != 'user':
+        flash("Você não tem permissão para acessar esta página.", "danger")
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        nome = request.form.get('nome')
+        email = request.form.get('email')
+        senha = request.form.get('senha')
+        senha_hash = bcrypt.generate_password_hash(senha).decode('utf-8')
+
+        # Verificar se o e-mail já está cadastrado
+        if Subusuario.query.filter_by(email=email).first():
+            flash('E-mail já cadastrado!', 'danger')
+            return redirect(url_for('subusuarios'))
+
+        # Criar o subusuário
+        novo_subusuario = Subusuario(
+            nome=nome,
+            email=email,
+            senha=senha_hash,
+            user_principal_id=current_user.id
+        )
+        db.session.add(novo_subusuario)
+        db.session.commit()
+
+        # Enviar e-mail com os dados de login
+        try:
+            msg = Message(
+                subject="Bem-vindo ao PrecifiqueJá!",
+                sender="noreply@precifiqueja.com",
+                recipients=[email]
+            )
+            msg.body = f"""
+            Olá, {nome}!
+
+            Seu acesso ao PrecifiqueJá foi criado com sucesso. Aqui estão os seus dados de login:
+
+            Email: {email}
+            Senha: {senha}
+
+            Acesse o sistema em: https://precificaja.com/precificaja/login
+
+            Atenciosamente,
+            Equipe PrecifiqueJá
+            """
+            mail.send(msg)
+            flash('Subusuário criado com sucesso! Um e-mail foi enviado com os dados de acesso.', 'success')
+        except Exception as e:
+            app.logger.error(f"Erro ao enviar e-mail para o subusuário: {str(e)}")
+            flash('Subusuário criado, mas ocorreu um erro ao enviar o e-mail.', 'warning')
+
+        return redirect(url_for('subusuarios'))
+
+    subusuarios = Subusuario.query.filter_by(user_principal_id=current_user.id).all()
+    return render_template('subusuarios.html', subusuarios=subusuarios)
+
+
+# Atualize o endpoint da rota para um nome único, por exemplo, 'view_logs'
+@app.route('/precificaja/logs', endpoint='view_logs')
+@login_required
+def logs():
+    if isinstance(current_user, Subusuario):
+        flash("Você não tem permissão para visualizar os logs.", "danger")
+        return redirect(url_for('dashboard'))
+
+    logs = LogAcesso.query.join(Subusuario).filter(Subusuario.user_principal_id == current_user.id).all()
+    return render_template('logs.html', logs=logs)
+
+
+@app.route('/precificaja/alterar_senha/<int:subusuario_id>', methods=['POST'])
+@login_required
+def alterar_senha_subusuario(subusuario_id):
+    app.logger.info(f"🔄 Tentando alterar senha do subusuário ID: {subusuario_id} pelo usuário ID: {current_user.id}")
+
+    # Verificar se é um usuário principal
+    user_type = session.get('user_type')
+    if user_type != 'user':
+        app.logger.warning(f"⛔ Permissão negada para alterar senha. Tipo de usuário: {user_type}")
+        return jsonify({"error": "Você não tem permissão para alterar senhas de subusuários."}), 403
+
+    # Buscar o subusuário no banco
+    subusuario = Subusuario.query.filter_by(id=subusuario_id, user_principal_id=current_user.id).first()
+    if not subusuario:
+        app.logger.warning(f"❌ Subusuário ID {subusuario_id} não encontrado para o usuário ID {current_user.id}")
+        return jsonify({"error": "Subusuário não encontrado."}), 404
+
+    # Capturar os dados enviados
+    data = request.get_json()
+    app.logger.info(f"📩 Dados recebidos: {data}")
+
+    if not data or 'nova_senha' not in data:
+        app.logger.warning("❌ Erro: Nenhuma senha nova foi enviada.")
+        return jsonify({"error": "A nova senha é obrigatória."}), 400
+
+    nova_senha = data.get('nova_senha')
+
+    # Atualizar a senha no banco de dados
+    subusuario.senha = bcrypt.generate_password_hash(nova_senha).decode('utf-8')
+    try:
+        db.session.commit()
+        app.logger.info(f"✅ Senha alterada com sucesso para o subusuário ID: {subusuario_id}")
+        return jsonify({"success": "Senha alterada com sucesso!"}), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"❌ Erro ao salvar nova senha no banco: {e}")
+        return jsonify({"error": "Erro ao alterar a senha."}), 500
+
+
+@app.route('/precificaja/excluir/<int:subusuario_id>', methods=['POST'])
+@login_required
+def excluir_subusuario(subusuario_id):
+    app.logger.info(f"🔄 Tentando excluir subusuário ID: {subusuario_id} pelo usuário ID: {current_user.id}")
+
+    # Verificar se é um usuário principal
+    user_type = session.get('user_type')
+    if user_type != 'user':
+        app.logger.warning(f"⛔ Permissão negada para excluir subusuário. Tipo de usuário: {user_type}")
+        return jsonify({"error": "Você não tem permissão para excluir subusuários."}), 403
+
+    # Buscar o subusuário no banco
+    subusuario = Subusuario.query.filter_by(id=subusuario_id, user_principal_id=current_user.id).first()
+
+    if not subusuario:
+        app.logger.warning(f"❌ Subusuário ID {subusuario_id} não encontrado para o usuário ID {current_user.id}")
+        return jsonify({"error": "Subusuário não encontrado."}), 404
+
+    # Excluir o subusuário
+    try:
+        db.session.delete(subusuario)
+        db.session.commit()
+
+        # Verificar se foi removido corretamente
+        check = Subusuario.query.filter_by(id=subusuario_id).first()
+        if check:
+            app.logger.error(f"❌ ERRO: Subusuário ID {subusuario_id} ainda existe após exclusão!")
+            return jsonify({"error": "Erro ao excluir subusuário do banco de dados."}), 500
+
+        app.logger.info(f"✅ Subusuário ID {subusuario_id} excluído com sucesso")
+        return jsonify({"success": "Subusuário excluído com sucesso!"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"❌ Erro ao excluir subusuário do banco: {e}")
+        return jsonify({"error": "Erro ao excluir subusuário."}), 500
+
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return redirect(url_for('login'))
+
+
+@app.route('/')
+def home():
+    return redirect(url_for('login'))
+
+
+@app.errorhandler(404)
+def page_not_found(e):
+    # Redireciona ao login quando uma página não é encontrada
+    return redirect(url_for('login'))
+
+
+@app.route('/configuracoes')
+@login_required  # Se quiser restringir o acesso a usuários logados
+def configuracoes():
+    return render_template('configuracoes.html')  # Certifique-se de que este arquivo HTML existe
+
+
+def limpar_cnpj(cnpj):
+    """Remove caracteres não numéricos do CNPJ"""
+    return ''.join(filter(str.isdigit, cnpj)) if cnpj else ''
+
+
+def formatar_cnpj(cnpj):
+    """Formata CNPJ para o padrão XX.XXX.XXX/XXXX-XX"""
+    cnpj_limpo = limpar_cnpj(cnpj)
+    if len(cnpj_limpo) == 14:
+        return f"{cnpj_limpo[:2]}.{cnpj_limpo[2:5]}.{cnpj_limpo[5:8]}/{cnpj_limpo[8:12]}-{cnpj_limpo[12:14]}"
+    return cnpj
+
+
+def validar_cnpj(cnpj):
+    """Valida CNPJ usando algoritmo oficial"""
+    cnpj = limpar_cnpj(cnpj)
+    if len(cnpj) != 14:
+        return False
+
+    # Validação matemática do CNPJ
+    def calcular_digito(cnpj, pesos):
+        soma = sum(int(cnpj[i]) * pesos[i] for i in range(len(pesos)))
+        digito = 11 - soma % 11
+        return str(digito if digito < 10 else 0)
+
+    pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    pesos2 = [6] + pesos1
+
+    digito1 = calcular_digito(cnpj[:-2], pesos1)
+    digito2 = calcular_digito(cnpj[:-1], pesos2)
+
+    return cnpj[-2:] == digito1 + digito2
+
+
+def processar_imposto_venda(valor_str):
+    """Processa valor de imposto, aceitando vírgula como separador decimal"""
+    if not valor_str:
+        return None
+
+    try:
+        # Substitui vírgula por ponto para conversão
+        valor_normalizado = valor_str.replace(',', '.')
+        valor = float(valor_normalizado)
+
+        # Valida se está dentro de um range razoável (0-100%)
+        if 0 <= valor <= 100:
+            return valor
+        else:
+            return None
+    except (ValueError, TypeError):
+        return None
+
+
+@app.route('/configurar_empresa', methods=['GET', 'POST'])
+@login_required
+def configurar_empresa():
+    empresa = Empresa.query.filter_by(user_id=current_user.id).first()
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'buscar_cnpj':
+            cnpj_input = request.form.get('cnpj', '').strip()
+            if not cnpj_input:
+                flash("Por favor, insira um CNPJ válido.", "danger")
+                return render_template('configurar_empresa.html', empresa=empresa)
+
+            # Limpa e valida o CNPJ
+            cnpj_limpo = limpar_cnpj(cnpj_input)
+            if not validar_cnpj(cnpj_limpo):
+                flash("CNPJ inválido. Verifique os dígitos e tente novamente.", "danger")
+                return render_template('configurar_empresa.html', empresa=empresa)
+
+            # Chamada à API pública
+            try:
+                response = requests.get(f"https://receitaws.com.br/v1/cnpj/{cnpj_limpo}")
+                if response.status_code == 200:
+                    data = response.json()
+
+                    # Verifica se a API retornou erro
+                    if data.get('status') == 'ERROR':
+                        flash(f"Erro na consulta: {data.get('message', 'CNPJ não encontrado.')}", "danger")
+                        return render_template('configurar_empresa.html', empresa=empresa)
+
+                    if not empresa:
+                        empresa = Empresa(user_id=current_user.id, cnpj=cnpj_limpo)
+                        db.session.add(empresa)
+
+                    # Preencher os dados da empresa
+                    empresa.cnpj = cnpj_limpo
+                    empresa.razao_social = data.get('nome', '')
+
+                    # Monta endereço completo
+                    endereco_parts = []
+                    if data.get('logradouro'):
+                        endereco_parts.append(data.get('logradouro'))
+                    if data.get('numero'):
+                        endereco_parts.append(data.get('numero'))
+                    if data.get('complemento'):
+                        endereco_parts.append(data.get('complemento'))
+                    if data.get('bairro'):
+                        endereco_parts.append(data.get('bairro'))
+                    if data.get('municipio') and data.get('uf'):
+                        endereco_parts.append(f"{data.get('municipio')} - {data.get('uf')}")
+                    if data.get('cep'):
+                        endereco_parts.append(f"CEP: {data.get('cep')}")
+
+                    empresa.endereco = ", ".join(endereco_parts)
+                    empresa.telefone = data.get('telefone', '')
+                    empresa.email = data.get('email', '')
+                    empresa.capital_social = data.get('capital_social', '')
+
+                    # Atividade principal
+                    atividades_principais = data.get('atividade_principal', [])
+                    if atividades_principais:
+                        empresa.atividade_principal = atividades_principais[0].get('text', '')
+
+                    # Atividades secundárias
+                    atividades_secundarias = data.get('atividades_secundarias', [])
+                    if atividades_secundarias:
+                        empresa.atividades_secundarias = ", ".join(
+                            [sec.get('text', '') for sec in atividades_secundarias])
+
+                    # Preencher representante da empresa (primeiro sócio)
+                    qsa = data.get('qsa', [])
+                    if qsa:
+                        empresa.nome_socio = qsa[0].get('nome', '')
+
+                    db.session.commit()
+                    flash("Dados preenchidos com sucesso! Salve para bloquear alterações no CNPJ.", "success")
+                else:
+                    flash("Erro ao buscar os dados do CNPJ. Tente novamente.", "danger")
+            except requests.RequestException as e:
+                flash(f"Erro ao conectar com a API: {str(e)}", "danger")
+            except Exception as e:
+                flash(f"Erro inesperado: {str(e)}", "danger")
+
+        elif action == 'salvar':
+            if not empresa:
+                flash("Nenhuma empresa encontrada para salvar.", "danger")
+                return render_template('configurar_empresa.html', empresa=empresa)
+
+            # Atualizar os campos enviados pelo formulário
+            cnpj_input = request.form.get('cnpj', '')
+            if cnpj_input:
+                cnpj_limpo = limpar_cnpj(cnpj_input)
+                if validar_cnpj(cnpj_limpo):
+                    empresa.cnpj = cnpj_limpo
+                else:
+                    flash("CNPJ inválido.", "danger")
+                    return render_template('configurar_empresa.html', empresa=empresa)
+
+            empresa.razao_social = request.form.get('razao_social', empresa.razao_social)
+            empresa.endereco = request.form.get('endereco', empresa.endereco)
+            empresa.telefone = request.form.get('telefone', empresa.telefone)
+            empresa.email = request.form.get('email', empresa.email)
+            empresa.capital_social = request.form.get('capital_social', empresa.capital_social)
+            empresa.atividade_principal = request.form.get('atividade_principal', empresa.atividade_principal)
+            empresa.atividades_secundarias = request.form.get('atividades_secundarias', empresa.atividades_secundarias)
+
+            # Representante
+            empresa.nome_socio = request.form.get('nome_socio', empresa.nome_socio)
+            empresa.cpf_socio = request.form.get('cpf_socio', empresa.cpf_socio)
+
+            # Campos bancários
+            empresa.banco = request.form.get('banco', empresa.banco)
+            empresa.agencia = request.form.get('agencia', empresa.agencia)
+            empresa.conta = request.form.get('conta', empresa.conta)
+            empresa.pix = request.form.get('pix', empresa.pix)
+            empresa.nome_conta = request.form.get('nome_conta', empresa.nome_conta)
+
+            # Salvar regime tributário
+            empresa.regime_tributacao = request.form.get('regime_tributacao', empresa.regime_tributacao)
+
+            # Processar imposto de venda com suporte a vírgula
+            imposto_venda_input = request.form.get('imposto_venda', '')
+            imposto_processado = processar_imposto_venda(imposto_venda_input)
+
+            if imposto_venda_input and imposto_processado is None:
+                flash("Valor de imposto inválido. Use números entre 0 e 100, separados por vírgula ou ponto.", "danger")
+                return render_template('configurar_empresa.html', empresa=empresa)
+
+            empresa.imposto_venda = imposto_processado
+
+            # Upload de logo
+            logo = request.files.get('logo')
+            if logo and logo.filename:
+                # Validar extensão do arquivo
+                extensoes_permitidas = {'png', 'jpg', 'jpeg'}
+                extensao = logo.filename.rsplit('.', 1)[1].lower() if '.' in logo.filename else ''
+
+                if extensao in extensoes_permitidas:
+                    logo_filename = secure_filename(logo.filename)
+                    logo_path = os.path.join(EMPRESA_UPLOAD_FOLDER, logo_filename)
+                    logo.save(logo_path)
+                    empresa.logo = logo_path
+                else:
+                    flash("Formato de logo inválido. Use PNG, JPG ou JPEG.", "danger")
+                    return render_template('configurar_empresa.html', empresa=empresa)
+
+            try:
+                db.session.commit()
+                flash("Dados da empresa salvos com sucesso!", "success")
+                return redirect(url_for('configurar_empresa'))
+            except Exception as e:
+                db.session.rollback()
+                flash(f"Erro ao salvar dados: {str(e)}", "danger")
+
+        elif action == 'atualizar':
+            if not empresa or not empresa.cnpj:
+                flash("Nenhum CNPJ configurado para atualizar.", "danger")
+                return redirect(url_for('configurar_empresa'))
+
+            try:
+                response = requests.get(f"https://receitaws.com.br/v1/cnpj/{empresa.cnpj}")
+                if response.status_code == 200:
+                    data = response.json()
+
+                    # Verifica se a API retornou erro
+                    if data.get('status') == 'ERROR':
+                        flash(f"Erro na consulta: {data.get('message', 'CNPJ não encontrado.')}", "danger")
+                        return redirect(url_for('configurar_empresa'))
+
+                    # Atualizar os campos com os novos dados
+                    empresa.razao_social = data.get('nome', '')
+
+                    # Monta endereço completo
+                    endereco_parts = []
+                    if data.get('logradouro'):
+                        endereco_parts.append(data.get('logradouro'))
+                    if data.get('numero'):
+                        endereco_parts.append(data.get('numero'))
+                    if data.get('complemento'):
+                        endereco_parts.append(data.get('complemento'))
+                    if data.get('bairro'):
+                        endereco_parts.append(data.get('bairro'))
+                    if data.get('municipio') and data.get('uf'):
+                        endereco_parts.append(f"{data.get('municipio')} - {data.get('uf')}")
+                    if data.get('cep'):
+                        endereco_parts.append(f"CEP: {data.get('cep')}")
+
+                    empresa.endereco = ", ".join(endereco_parts)
+                    empresa.telefone = data.get('telefone', '')
+                    empresa.email = data.get('email', '')
+                    empresa.capital_social = data.get('capital_social', '')
+
+                    # Atividade principal
+                    atividades_principais = data.get('atividade_principal', [])
+                    if atividades_principais:
+                        empresa.atividade_principal = atividades_principais[0].get('text', '')
+
+                    # Atividades secundárias
+                    atividades_secundarias = data.get('atividades_secundarias', [])
+                    if atividades_secundarias:
+                        empresa.atividades_secundarias = ", ".join(
+                            [sec.get('text', '') for sec in atividades_secundarias])
+
+                    # Atualizar representante (primeiro sócio)
+                    qsa = data.get('qsa', [])
+                    if qsa:
+                        empresa.nome_socio = qsa[0].get('nome', '')
+
+                    db.session.commit()
+                    flash("Dados do CNPJ atualizados com sucesso!", "success")
+                else:
+                    flash("Erro ao buscar os dados do CNPJ.", "danger")
+            except requests.RequestException as e:
+                flash(f"Erro ao conectar com a API: {str(e)}", "danger")
+            except Exception as e:
+                flash(f"Erro inesperado: {str(e)}", "danger")
+
+    return render_template('configurar_empresa.html', empresa=empresa)
+
+
+def login_required_custom(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if request.path.startswith("/.well-known/"):
+            return '', 204
+        if not current_user.is_authenticated:
+            return redirect(url_for('login', next=request.path))
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+@app.route('/api/consultar_cnpj', methods=['GET', 'POST'])
+@login_required
+def consultar_cnpj():
+    if request.method == 'GET':
+        cnpj = request.args.get('cnpj')
+    else:  # POST
+        cnpj = request.json.get('cnpj') if request.is_json else request.form.get('cnpj')
+
+    if not cnpj:
+        return jsonify({"error": "CNPJ não fornecido."}), 400
+
+    # Limpa e valida o CNPJ
+    cnpj_limpo = limpar_cnpj(cnpj)
+    if not validar_cnpj(cnpj_limpo):
+        return jsonify({"error": "CNPJ inválido."}), 400
+
+    try:
+        # Use a URL correta para a API de consulta
+        response = requests.get(f"https://receitaws.com.br/v1/cnpj/{cnpj_limpo}")
+
+        # Verifique o código de status da resposta
+        if response.status_code != 200:
+            app.logger.error(f"Erro na API de consulta ao CNPJ: {response.text}")
+            return jsonify({"error": "Erro ao consultar o CNPJ. Verifique e tente novamente."}), response.status_code
+
+        # Tente converter a resposta em JSON
+        try:
+            data = response.json()
+        except ValueError as ve:
+            app.logger.error(f"Erro ao interpretar JSON: {ve}")
+            return jsonify({"error": "Resposta inválida da API de consulta ao CNPJ."}), 500
+
+        # Verifique se a API retornou um status de erro
+        if data.get("status") == "ERROR":
+            app.logger.error(f"Erro na consulta ao CNPJ: {data.get('message', 'Erro desconhecido.')}")
+            return jsonify({"error": data.get("message", "Erro ao consultar o CNPJ.")}), 400
+
+        # Monta endereço completo
+        endereco_parts = []
+        if data.get('logradouro'):
+            endereco_parts.append(data.get('logradouro'))
+        if data.get('numero'):
+            endereco_parts.append(data.get('numero'))
+        if data.get('complemento'):
+            endereco_parts.append(data.get('complemento'))
+        if data.get('bairro'):
+            endereco_parts.append(data.get('bairro'))
+        if data.get('municipio') and data.get('uf'):
+            endereco_parts.append(f"{data.get('municipio')} - {data.get('uf')}")
+        if data.get('cep'):
+            endereco_parts.append(f"CEP: {data.get('cep')}")
+
+        # Retorne os dados relevantes
+        return jsonify({
+            "razao_social": data.get('nome', ''),
+            "endereco": ", ".join(endereco_parts),
+            "telefone": data.get('telefone', ''),
+            "email": data.get('email', ''),
+            "capital_social": data.get('capital_social', ''),
+            "atividade_principal": data.get('atividade_principal', [{}])[0].get('text', '') if data.get(
+                'atividade_principal') else '',
+            "atividades_secundarias": ", ".join(
+                [sec.get('text', '') for sec in data.get('atividades_secundarias', [])]),
+            "nome_socio": data.get('qsa', [{}])[0].get('nome', '') if data.get('qsa') else ''
+        }), 200
+    except requests.RequestException as e:
+        app.logger.error(f"Erro ao conectar com a API de consulta ao CNPJ: {e}")
+        return jsonify({"error": "Erro ao conectar com a API de consulta ao CNPJ."}), 500
+    except Exception as e:
+        app.logger.error(f"Erro inesperado na consulta ao CNPJ: {e}")
+        return jsonify({"error": "Erro inesperado ao consultar o CNPJ."}), 500
+
+
+@app.route('/precificaja/calculadora', methods=['GET'])
+@login_required
+def calculadora():
+    # Buscar o imposto_venda da empresa do usuário logado
+    empresa = Empresa.query.filter_by(user_id=current_user.id).first()
+    imposto_venda = empresa.imposto_venda if empresa and empresa.imposto_venda else 0  # Padrão: 0%
+
+    # Recupera dados do edital da sessão (se existir)
+    dados_edital = session.get('edital_data', None)
+
+    return render_template('calculadora.html',
+                           imposto_venda=imposto_venda,
+                           dados_edital=dados_edital)
+
+
+# ---------------------LIBERAÇÃO DE ACESSOS----------------------
+
+
+@app.route('/precificaja/webhook', methods=['POST'])
+def webhook():
+    try:
+        # Obtém os dados da requisição em formato JSON
+        data = request.get_json()
+        if not data:
+            app.logger.error("Requisição inválida: Payload JSON ausente")
+            return jsonify({"error": "Payload JSON ausente"}), 400
+
+        app.logger.info(f"Webhook recebido: {data}")
+
+        # Extrai o evento e os dados do cliente
+        evento = data.get("event")
+        app.logger.info(f"Evento recebido: {evento}")
+
+        cliente_email = None
+        cliente_nome = None
+
+        # Verifica o tipo de evento e extrai as informações relevantes
+        if evento in ["PURCHASE_APPROVED", "PURCHASE_REFUNDED", "PURCHASE_CHARGEBACK"]:
+            cliente_email = data.get("data", {}).get("buyer", {}).get("email", "").strip().lower()
+            cliente_nome = data.get("data", {}).get("buyer", {}).get("name", "")
+        elif evento == "SUBSCRIPTION_CANCELLATION":
+            cliente_email = data.get("data", {}).get("subscriber", {}).get("email", "").strip().lower()
+            cliente_nome = data.get("data", {}).get("subscriber", {}).get("name", "")
+
+        # Valida o e-mail do cliente
+        if not cliente_email:
+            app.logger.error(f"E-mail do cliente ausente no evento: {evento}")
+            return jsonify({"error": "E-mail do cliente ausente"}), 400
+
+        # Busca ou cria o usuário no banco de dados
+        usuario = User.query.filter_by(email=cliente_email).first()
+
+        if evento == "PURCHASE_APPROVED":
+            if not usuario:
+                # Cria o usuário com dados padrão
+                senha_padrao = "precifica@25"
+                senha_hash = bcrypt.generate_password_hash(senha_padrao).decode('utf-8')
+                usuario = User(
+                    nome=cliente_nome,
+                    email=cliente_email,
+                    senha=senha_hash,
+                    status="ativo",
+                    data_ativacao=datetime.utcnow()
+                )
+                db.session.add(usuario)
+                app.logger.info(f"Usuário {cliente_nome} ({cliente_email}) criado com sucesso.")
+            else:
+                # Atualiza o status do usuário para ativo
+                usuario.status = "ativo"
+                usuario.data_ativacao = datetime.utcnow()
+                app.logger.info(f"Usuário {cliente_email} reativado.")
+
+            # Salva alterações no banco de dados
+            db.session.commit()
+
+            # Envia o e-mail de boas-vindas
+            try:
+                msg = Message(
+                    "Bem-vindo ao PrecifiqueJá!",
+                    sender=app.config['MAIL_USERNAME'],
+                    recipients=[cliente_email],
+                )
+                msg.body = f"""
+                Olá, {cliente_nome}!
+
+                Sua conta foi criada ou reativada com sucesso no PrecifiqueJá. Aqui estão seus dados de acesso:
+
+                E-mail: {cliente_email}
+                Senha: {senha_padrao}
+
+                Acesse o sistema em:  https://precificaja.com/precificaja/login
+
+                Atenciosamente,
+                Equipe PrecifiqueJá
+                """
+                mail.send(msg)
+                app.logger.info(f"E-mail enviado para {cliente_email}.")
+            except Exception as email_error:
+                app.logger.error(f"Erro ao enviar e-mail para {cliente_email}: {email_error}")
+
+        elif evento in ["PURCHASE_REFUNDED", "PURCHASE_CHARGEBACK", "SUBSCRIPTION_CANCELLATION"]:
+            if usuario:
+                # Inativa o usuário
+                usuario.status = "inativo"
+                db.session.commit()
+                app.logger.info(f"Usuário {cliente_email} foi inativado devido ao evento {evento}.")
+            else:
+                app.logger.warning(f"Usuário {cliente_email} não encontrado para inativação.")
+
+        return jsonify({"status": "sucesso"}), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro ao processar o webhook: {e}")
+        return jsonify({"error": "Erro interno no servidor"}), 500
+
+
+@app.route('/test_session', methods=['GET'])
+def test_session():
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    return jsonify({
+        'user_id': user_id,
+        'user_type': user_type,
+        'is_authenticated': current_user.is_authenticated
+    })
+
+
+{
+    "user_id": 1,
+    "user_type": "user",
+
+    "is_authenticated": True  # Use a sintaxe correta com T maiúsculo
+
+}
+
+
+@app.route('/calculadora/salvar_passo1', methods=['POST'])
+@login_required
+def salvar_passo1():
+    try:
+        # Log para depuração
+        app.logger.info(f"Usuário autenticado: ID={current_user.id}, Tipo={session.get('user_type')} ")
+
+        # Verificar se o usuário está autenticado
+        if not current_user.is_authenticated:
+            app.logger.error("Tentativa de acesso sem autenticação.")
+            return jsonify({'error': 'Usuário não autenticado.'}), 401
+
+        # Obter os dados enviados na requisição
+        data = request.json
+        if not data:
+            app.logger.error("Nenhum dado recebido na requisição.")
+            return jsonify({'error': 'Nenhum dado enviado na requisição.'}), 400
+
+        # Verificar campos obrigatórios
+        required_fields = [
+            'cnpj', 'razao_social', 'endereco', 'numero_processo',
+            'validade_proposta', 'prazo_pagamento', 'local_entrega', 'prazo_entrega'
+        ]
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        if missing_fields:
+            app.logger.error(f"Campos obrigatórios ausentes: {', '.join(missing_fields)}")
+            return jsonify({'error': f'Campos obrigatórios ausentes: {", ".join(missing_fields)}'}), 400
+
+        # Determinar o usuário principal e o subusuário
+        if isinstance(current_user, Subusuario):  # Se for subusuário
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:  # Se for usuário principal
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        if not user_principal_id:
+            app.logger.error("Erro ao identificar o usuário principal.")
+            return jsonify({'error': 'Erro ao identificar o usuário principal.'}), 500
+
+        # Criar ou atualizar o registro da proposta
+        nova_proposta = CalculadoraPasso1(
+            user_id=user_principal_id,  # Sempre associar ao usuário principal
+            subusuario_id=subusuario_id,  # Associar o subusuário, se aplicável
+            cnpj=data['cnpj'],
+            razao_social=data['razao_social'],
+            endereco=data['endereco'],
+            numero_processo=data['numero_processo'],
+            validade_proposta=data['validade_proposta'],
+            prazo_pagamento=data['prazo_pagamento'],
+            local_entrega=data['local_entrega'],
+            prazo_entrega=data['prazo_entrega']
+        )
+        db.session.add(nova_proposta)
+        db.session.commit()
+
+        # Log de sucesso
+        app.logger.info(f"Passo 1 salvo com sucesso para o usuário ID {current_user.id}. Subusuário: {subusuario_id}")
+
+        # Retorna o ID da proposta salva para uso no Passo 2
+        return jsonify({'message': 'Passo 1 salvo com sucesso!', 'proposta_id': nova_proposta.id}), 200
+
+    except Exception as e:
+        # Log do erro para depuração
+        app.logger.error(f"Erro ao salvar Passo 1: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Erro interno ao salvar o Passo 1.', 'details': str(e)}), 500
+
+
+@app.route('/calculadora/salvar_passo2', methods=['POST'])
+@login_required
+def salvar_passo2():
+    try:
+        if not current_user.is_authenticated:
+            return jsonify({'error': 'Usuário não autenticado.'}), 401
+
+        data = request.json
+        if not data or 'produtos' not in data or 'proposta_id' not in data:
+            return jsonify({'error': 'Dados inválidos ou incompletos enviados.'}), 400
+
+        proposta_id = data['proposta_id']
+        produtos = data['produtos']
+        frete = float(data.get('frete', 0))
+
+        # Determinar o usuário principal e o subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # Verifica se a proposta pertence ao usuário
+        proposta = CalculadoraPasso1.query.filter_by(id=proposta_id, user_id=user_principal_id).first()
+        if not proposta:
+            return jsonify({'error': 'Proposta não encontrada ou não pertence ao usuário.'}), 400
+
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        imposto_venda = empresa.imposto_venda if empresa and empresa.imposto_venda is not None else 0
+
+        # Cálculos agregados
+        referencia_total = sum([float(p.get('referencia', 0)) * int(p.get('quantidade', 1)) for p in produtos])
+        valor_total_venda = sum([float(p.get('venda', 0)) * int(p.get('quantidade', 1)) for p in produtos])
+        custo_total_geral = sum([float(p.get('custo', 0)) * int(p.get('quantidade', 1)) for p in produtos])
+        imposto_total = valor_total_venda * (imposto_venda / 100)
+        lucro_total = valor_total_venda - custo_total_geral - frete - imposto_total
+
+        # Salvar cada produto
+        for produto_data in produtos:
+            # Validação mínima por produto
+            if 'nome' not in produto_data or 'custo' not in produto_data or 'quantidade' not in produto_data or 'venda' not in produto_data:
+                continue  # Ignora produtos incompletos
+
+            novo_produto = Produto(
+                numero_item=produto_data.get('numero_item', ''),
+                nome=produto_data['nome'],
+                marca_modelo=produto_data.get('marca_modelo', ''),
+                custo=float(produto_data['custo']),
+                quantidade=int(produto_data['quantidade']),
+                unidade_medida=str(produto_data.get('unidade_medida', '')).strip(),
+                referencia=float(produto_data.get('referencia', 0)),
+                venda=float(produto_data['venda']),
+                user_id=user_principal_id,
+                subusuario_id=subusuario_id,
+                calculadora_passo1_id=proposta_id,
+                frete=frete,
+                custo_total=float(produto_data['custo']) * int(produto_data['quantidade']),
+                referencia_total=referencia_total,
+                imposto_total=imposto_total,
+                valor_total_venda=valor_total_venda,
+                lucro_total=lucro_total
+            )
+            db.session.add(novo_produto)
+
+        db.session.commit()
+
+        # ✅ LIMPAR SESSÃO APÓS FINALIZAR COM SUCESSO
+        limpar_sessao_calculadora_atual()
+
+        return jsonify({'message': 'Dados do Passo 2 salvos com sucesso!'}), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro ao salvar os dados do Passo 2: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/imposto', methods=['GET'])
+@login_required
+def obter_imposto():
+    try:
+        # Log para verificar quem está autenticado
+        app.logger.info(f"Usuário autenticado: ID={current_user.id}, Tipo={type(current_user).__name__}")
+
+        # Determinar corretamente o usuário principal
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            app.logger.info(f"Subusuário autenticado. ID={current_user.id}, User Principal ID={user_principal_id}")
+        else:
+            user_principal_id = current_user.id
+            app.logger.info(f"Usuário principal autenticado. ID={user_principal_id}")
+
+        if not user_principal_id:
+            app.logger.error("Erro ao identificar o usuário principal para imposto.")
+            return jsonify({'error': 'Erro ao identificar o usuário principal para imposto.'}), 500
+
+        # Buscar a empresa vinculada ao usuário principal
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+
+        if not empresa:
+            app.logger.warning(f"Empresa não encontrada para user_id={user_principal_id}")
+            return jsonify({'error': 'Empresa não encontrada para este usuário principal.'}), 404
+
+        app.logger.info(f"Empresa encontrada para user_id={user_principal_id}. Imposto: {empresa.imposto_venda}")
+
+        return jsonify({'imposto_venda': empresa.imposto_venda or 0, 'user_principal_id': user_principal_id}), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro ao obter imposto: {e}", exc_info=True)
+        return jsonify({'error': 'Erro interno ao obter o imposto.', 'details': str(e)}), 500
+
+
+@app.route('/api/empresa', methods=['GET'])
+def get_empresa():
+    try:
+        # Verifica o usuário atual logado
+        empresa = Empresa.query.filter_by(user_id=current_user.id).first()
+        if not empresa:
+            return jsonify({"error": "Dados da empresa não encontrados."}), 404
+
+        # Prepara o caminho da logo
+        logo_path = f"/{empresa.logo}" if empresa.logo else ""
+
+        # Retorna os dados da empresa
+        return jsonify({
+            "logo": logo_path,
+            "razao_social": empresa.razao_social,
+            "cnpj": empresa.cnpj,
+            "endereco": empresa.endereco,
+            "telefone": empresa.telefone,
+            "email": empresa.email,
+        }), 200
+    except Exception as e:
+        print(f"Erro ao buscar dados da empresa: {e}")
+        return jsonify({"error": "Erro interno no servidor."}), 500
+
+
+@app.route('/calculadora/cancelar_processo/<int:id>', methods=['DELETE'])
+def cancelar_processo(id):
+    """
+    Exclui o registro baseado no ID.
+    """
+    try:
+        registro = CalculadoraPasso1.query.get(id)
+        if registro:
+            db.session.delete(registro)
+            db.session.commit()
+            return jsonify({'message': 'Processo cancelado com sucesso!'}), 200
+        else:
+            return jsonify({'error': 'Registro não encontrado.'}), 404
+    except Exception as e:
+        return jsonify({'error': f'Erro ao cancelar o processo: {str(e)}'}), 500
+
+
+@app.route('/api/buscar_produtos', methods=['GET'])
+@login_required
+def buscar_produtos():
+    termo = request.args.get("q", "").strip()
+
+    if not termo:
+        return jsonify([])  # Retorna uma lista vazia se não houver termo
+
+    try:
+        user_id = current_user.id  # ID do usuário autenticado
+
+        # 1ª busca: Tabela Produto (Filtra por user_id)
+        produtos = Produto.query.filter(
+            Produto.user_id == user_id,  # Filtra pelo usuário logado
+            Produto.nome.ilike(f"%{termo}%")
+        ).limit(10).all()
+
+        resultado = [
+            {
+                "id": produto.id,
+                "nome": produto.nome,
+                "marca_modelo": produto.marca_modelo or "",  # Evita erro se for None
+                "custo": produto.custo,
+                "origem": "Produto Cadastrado"
+            }
+            for produto in produtos
+        ]
+
+        # Se não encontrou nada na primeira, busca na tabela ProdutosFornecedores
+        if not resultado:
+            produtos_fornecedores = ProdutosFornecedores.query.filter(
+                ProdutosFornecedores.user_id == user_id,  # Filtra pelo usuário logado
+                ProdutosFornecedores.nome.ilike(f"%{termo}%")
+            ).limit(10).all()
+
+            resultado = [
+                {
+                    "id": produto.id,
+                    "nome": produto.nome,
+                    "marca_modelo": f"{produto.marca} {produto.modelo}".strip() if produto.marca or produto.modelo else "",
+                    "custo": produto.custo,
+                    "origem": "Fornecedor"
+                }
+                for produto in produtos_fornecedores
+            ]
+
+        return jsonify(resultado)
+
+    except Exception as e:
+        app.logger.error(f"Erro ao buscar produtos: {str(e)}")
+        return jsonify({"error": "Erro ao buscar produtos"}), 500
+
+
+# CÓDIGO CORRIGIDO PARA ADICIONAR NO SEU APP.PY
+# Substitua as rotas vazias pelo código completo abaixo
+
+# ===== IMPORTAÇÕES NECESSÁRIAS (adicionar no topo do app.py) =====
+from datetime import datetime, timedelta
+import json
+
+
+# ===== ROTAS DE SESSÃO DA CALCULADORA =====
+
+
+@app.route('/precificaja/calculadora/sessao/salvar', methods=['POST'])
+@login_required
+def salvar_sessao_calculadora():
+    """
+    Salva ou atualiza a sessão atual da calculadora
+    """
+    try:
+        # Log para depuração
+        app.logger.info(f"Salvando sessão para usuário ID={current_user.id}")
+
+        # Verificar se o usuário está autenticado
+        if not current_user.is_authenticated:
+            app.logger.error("Tentativa de salvar sessão sem autenticação.")
+            return jsonify({'error': 'Usuário não autenticado.'}), 401
+
+        # Obter os dados enviados na requisição
+        data = request.json
+        if not data:
+            app.logger.error("Nenhum dado recebido na requisição de sessão.")
+            return jsonify({'error': 'Nenhum dado enviado na requisição.'}), 400
+
+        # Determinar o usuário principal e o subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # Verificar se já existe uma sessão ativa
+        sessao_existente = CalculadoraSessao.query.filter_by(
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id
+        ).first()
+
+        if sessao_existente:
+            # Atualizar sessão existente
+            sessao_existente.set_dados_sessao(data.get('dados_sessao', {}))
+            sessao_existente.passo_atual = data.get('passo_atual', 1)
+            sessao_existente.updated_at = datetime.utcnow()
+            sessao_existente.expires_at = datetime.utcnow() + timedelta(hours=24)
+
+            app.logger.info(f"Sessão {sessao_existente.id} atualizada")
+        else:
+            # Criar nova sessão
+            nova_sessao = CalculadoraSessao(
+                user_id=user_principal_id,
+                subusuario_id=subusuario_id,
+                passo_atual=data.get('passo_atual', 1),
+                expires_at=datetime.utcnow() + timedelta(hours=24)
+            )
+            nova_sessao.set_dados_sessao(data.get('dados_sessao', {}))
+
+            db.session.add(nova_sessao)
+            app.logger.info(f"Nova sessão criada para usuário {user_principal_id}")
+
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Sessão salva com sucesso!',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro ao salvar sessão: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Erro interno ao salvar a sessão.', 'details': str(e)}), 500
+
+
+@app.route('/precificaja/calculadora/sessao/carregar', methods=['GET'])
+@login_required
+def carregar_sessao_calculadora():
+    """
+    Carrega a sessão salva da calculadora
+    """
+    try:
+        # Log para depuração
+        app.logger.info(f"Carregando sessão para usuário ID={current_user.id}")
+
+        # Verificar se o usuário está autenticado
+        if not current_user.is_authenticated:
+            app.logger.error("Tentativa de carregar sessão sem autenticação.")
+            return jsonify({'error': 'Usuário não autenticado.'}), 401
+
+        # Determinar o usuário principal e o subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # Buscar sessão ativa
+        sessao = CalculadoraSessao.query.filter_by(
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id
+        ).first()
+
+        if not sessao:
+            app.logger.info(f"Nenhuma sessão encontrada para usuário {user_principal_id}")
+            return jsonify({'has_session': False}), 200
+
+        # Verificar se a sessão expirou
+        if sessao.is_expired():
+            app.logger.info(f"Sessão {sessao.id} expirada, removendo...")
+            db.session.delete(sessao)
+            db.session.commit()
+            return jsonify({'has_session': False}), 200
+
+        # Retornar dados da sessão
+        dados_sessao = sessao.get_dados_sessao()
+
+        app.logger.info(f"Sessão {sessao.id} carregada com sucesso")
+
+        return jsonify({
+            'has_session': True,
+            'sessao_id': sessao.id,
+            'passo_atual': sessao.passo_atual,
+            'dados_sessao': dados_sessao,
+            'created_at': sessao.created_at.isoformat(),
+            'updated_at': sessao.updated_at.isoformat()
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar sessão: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Erro interno ao carregar a sessão.', 'details': str(e)}), 500
+
+
+def limpar_sessao_calculadora_atual():
+    """
+    Limpa a sessão de recuperação do usuário atual
+    Deve ser chamada após finalizar uma licitação com sucesso
+    """
+    try:
+        if not current_user.is_authenticated:
+            return False
+
+        # Determinar o usuário principal e o subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # Buscar sessão ativa
+        sessao = CalculadoraSessao.query.filter_by(
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id
+        ).first()
+
+        if sessao:
+            db.session.delete(sessao)
+            db.session.commit()
+            app.logger.info(f"✅ Sessão {sessao.id} removida automaticamente - Licitação finalizada")
+            return True
+        else:
+            app.logger.info("ℹ️ Nenhuma sessão encontrada para limpar")
+            return False
+
+    except Exception as e:
+        app.logger.error(f"❌ Erro ao limpar sessão automaticamente: {str(e)}")
+        try:
+            db.session.rollback()
+        except:
+            pass
+        return False
+
+
+@app.route('/precificaja/calculadora/sessao/verificar', methods=['GET'])
+@login_required
+def verificar_sessao_calculadora():
+    """
+    Verifica se existe uma sessão ativa (sem carregar os dados)
+    """
+    try:
+        # Determinar o usuário principal e o subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # Buscar sessão ativa
+        sessao = CalculadoraSessao.query.filter_by(
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id
+        ).first()
+
+        if not sessao or sessao.is_expired():
+            return jsonify({'has_session': False}), 200
+
+        return jsonify({
+            'has_session': True,
+            'passo_atual': sessao.passo_atual,
+            'updated_at': sessao.updated_at.isoformat()
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro ao verificar sessão: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Erro interno ao verificar a sessão.', 'details': str(e)}), 500
+
+
+@app.route('/calculadora/sessao/limpeza', methods=['POST'])
+def limpeza_sessoes_expiradas():
+    """
+    Remove sessões expiradas (pode ser chamada por um cron job)
+    """
+    try:
+        # Buscar sessões expiradas
+        sessoes_expiradas = CalculadoraSessao.query.filter(
+            CalculadoraSessao.expires_at < datetime.utcnow()
+        ).all()
+
+        count = len(sessoes_expiradas)
+
+        # Remover sessões expiradas
+        for sessao in sessoes_expiradas:
+            db.session.delete(sessao)
+
+        db.session.commit()
+
+        app.logger.info(f"Limpeza automática: {count} sessões expiradas removidas")
+
+        return jsonify({
+            'message': f'{count} sessões expiradas removidas com sucesso!',
+            'count': count
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro na limpeza de sessões: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Erro interno na limpeza de sessões.', 'details': str(e)}), 500
+
+
+# ------------------lancamento de serviços----------------
+
+
+@app.route(f"{SERVICO_PREFIX}/lotes", methods=["GET"])
+@login_required
+def obter_lotes_servicos():
+    try:
+        proposta_id = request.args.get("proposta_id")
+        if not proposta_id:
+            return jsonify({"error": "O ID da proposta é obrigatório."}), 400
+
+        # ✅ LÓGICA ORIGINAL: proposta_id + current_user.id
+        lotes = Lote.query.filter_by(proposta_id=proposta_id, user_id=current_user.id).all()
+
+        resultado = []
+        for lote in lotes:
+            resultado.append({
+                "id": lote.id,
+                "nome": lote.nome,
+                "servicos": [{
+                    "id": servico.id,
+                    "nome": servico.nome,
+                    "unidade_medida": servico.unidade_medida,
+                    "custo_unitario": servico.custo_unitario,
+                    "quantidade": servico.quantidade,
+                    "valor_venda": servico.valor_venda,
+                } for servico in lote.servicos]
+            })
+
+        return jsonify(resultado), 200
+    except Exception as e:
+        return jsonify({"error": f"Erro ao obter lotes: {str(e)}"}), 500
+
+
+@app.route('/servicos/calculadora', methods=['GET'])
+@login_required
+def calculadora_servicos():
+    """
+    Rota principal da calculadora de serviços
+    """
+    # Buscar o imposto_venda da empresa do usuário logado
+    if isinstance(current_user, Subusuario):
+        user_principal_id = current_user.user_principal_id
+    else:
+        user_principal_id = current_user.id
+
+    empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+    imposto_venda = empresa.imposto_venda if empresa and empresa.imposto_venda else 0  # Padrão: 0%
+
+    # Recupera dados do edital da sessão (se existir)
+    dados_edital = session.get('edital_data', None)
+
+    return render_template('calculadora_servicos.html',
+                           imposto_venda=imposto_venda,
+                           dados_edital=dados_edital)
+
+
+@app.route('/servicos/passo1/salvar', methods=['POST'])
+@login_required
+def salvar_passo1_servicos():
+    try:
+        if not current_user.is_authenticated:
+            return jsonify({"error": "Sessão expirada. Faça login novamente."}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Dados não fornecidos."}), 400
+
+        # Determinar user_id correto
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # ✅ TRATAR CAMPOS VAZIOS ANTES DE CONVERTER PARA INT
+        def safe_int(value, default=0):
+            """Converte para int tratando strings vazias"""
+            if not value or str(value).strip() == '':
+                return default
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return default
+
+        # ✅ USAR SEU MODELO EXISTENTE (CalculadoraPasso1Servicos)
+        proposta = CalculadoraPasso1Servicos(
+            cnpj=data.get('cnpj', ''),
+            razao_social=data.get('razao_social', ''),
+            endereco=data.get('endereco', ''),
+            numero_processo=data.get('numero_processo', ''),
+            validade_proposta=safe_int(data.get('validade_proposta'), 60),  # ✅ CORRIGIDO
+            prazo_pagamento=data.get('prazo_pagamento', ''),
+            local_execucao=data.get('local_execucao', ''),
+            prazo_execucao=safe_int(data.get('prazo_execucao'), 30),  # ✅ CORRIGIDO
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id,
+            criado_em=datetime.now()
+        )
+
+        db.session.add(proposta)
+        db.session.commit()
+
+        app.logger.info(f"✅ Passo 1 de serviços salvo - ID: {proposta.id}")
+
+        return jsonify({
+            "message": "Passo 1 salvo com sucesso!",
+            "proposta_id": proposta.id
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"❌ Erro ao salvar Passo 1 de serviços: {str(e)}")
+        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+
+
+@app.route('/servicos/sessao/salvar', methods=['POST'])
+@login_required
+def salvar_sessao_servicos():
+    try:
+        if not current_user.is_authenticated:
+            return jsonify({"error": "Sessão expirada"}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Dados não fornecidos"}), 400
+
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        app.logger.info(f"💾 Salvando sessão de serviços para usuário ID={user_principal_id}")
+
+        # ✅ USAR CALCULADORASESSAOSERVICOS
+        sessao = CalculadoraSessaoServicos.query.filter_by(
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id
+        ).first()
+
+        if sessao:
+            # Atualizar sessão existente
+            sessao.set_dados_sessao(data.get('dados_sessao', {}))
+            sessao.passo_atual = data.get('passo_atual', 1)
+            sessao.updated_at = datetime.now()
+            sessao.expires_at = datetime.now() + timedelta(hours=24)
+            app.logger.info(f"✅ Sessão de serviços atualizada - ID: {sessao.id}")
+        else:
+            # Criar nova sessão
+            nova_sessao = CalculadoraSessaoServicos(
+                user_id=user_principal_id,
+                subusuario_id=subusuario_id,
+                passo_atual=data.get('passo_atual', 1),
+                expires_at=datetime.now() + timedelta(hours=24)
+            )
+            nova_sessao.set_dados_sessao(data.get('dados_sessao', {}))
+            db.session.add(nova_sessao)
+            app.logger.info(f"✅ Nova sessão de serviços criada")
+
+        db.session.commit()
+        return jsonify({"message": "Sessão salva com sucesso"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"❌ Erro ao salvar sessão de serviços: {str(e)}")
+        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+
+
+@app.route('/api/check-session', methods=['GET'])
+def check_session():
+    """Verifica se o usuário está autenticado"""
+    try:
+        if current_user.is_authenticated:
+            return jsonify({"authenticated": True}), 200
+        else:
+            return jsonify({"authenticated": False}), 401
+    except Exception as e:
+        return jsonify({"authenticated": False, "error": str(e)}), 401
+
+
+@app.route("/servicos/passo2/salvar", methods=["POST"])
+@login_required
+def salvar_passo2_servicos():
+    """
+    Salva o Passo 2 da calculadora de serviços (CORRIGIDA)
+    """
+    try:
+        app.logger.info(f"Usuário autenticado: {current_user.id}, Tipo: {type(current_user).__name__}")
+
+        if not current_user.is_authenticated:
+            app.logger.warning("Sessão expirada. Redirecionando para login.")
+            return jsonify({"error": "Sessão expirada. Faça login novamente."}), 401
+
+        # Obter dados da requisição
+        data = request.json
+        if not data or "proposta_id" not in data or "lotes" not in data:
+            return jsonify({"error": "Dados inválidos ou incompletos enviados."}), 400
+
+        proposta_id = data["proposta_id"]
+        lotes = data["lotes"]
+        despesas = data.get("despesas", [])
+
+        # Determinar usuário principal e subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # ✅ CORREÇÃO: Validar a proposta na tabela CORRETA
+        proposta = CalculadoraPasso1Servicos.query.filter_by(
+            id=proposta_id,
+            user_id=user_principal_id
+        ).first()
+
+        if not proposta:
+            return jsonify({"error": "Proposta de serviços não encontrada ou não pertence ao usuário logado."}), 404
+
+        # ✅ CORREÇÃO: Salvar lotes com referência CORRETA
+        for lote_data in lotes:
+            nome_lote = lote_data.get("nome")
+            if not nome_lote:
+                return jsonify({"error": "O nome do lote é obrigatório."}), 400
+
+            # ✅ USAR proposta_servico_id em vez de proposta_id
+            lote = Lote(
+                nome=nome_lote,
+                proposta_servico_id=proposta_id,  # ✅ CAMPO CORRETO
+                proposta_id=None,  # ✅ DEIXAR NULO para serviços
+                proposta_tipo="servico",  # ✅ TIPO CORRETO
+                user_id=user_principal_id,
+                subusuario_id=subusuario_id
+            )
+
+            db.session.add(lote)
+            db.session.flush()  # Obter o ID do lote imediatamente
+
+            # Salvar os serviços relacionados ao lote
+            for servico_data in lote_data.get("servicos", []):
+                nome_servico = servico_data.get("nome")
+                unidade = servico_data.get("unidade_medida")
+                quantidade = float(str(servico_data.get("quantidade", 0)).replace(',', '.'))
+                custo_unitario = servico_data.get("custo_unitario")
+                valor_venda = servico_data.get("valor_venda")
+
+                if not nome_servico or not unidade or quantidade is None or custo_unitario is None or valor_venda is None:
+                    return jsonify({"error": "Dados incompletos para o serviço."}), 400
+
+                servico = Servico(
+                    nome=nome_servico,
+                    unidade_medida=unidade,
+                    quantidade=quantidade,
+                    custo_unitario=custo_unitario,
+                    valor_venda=valor_venda,
+                    lote_id=lote.id,
+                    user_id=user_principal_id,
+                    subusuario_id=subusuario_id
+                )
+                db.session.add(servico)
+
+        # ✅ CORREÇÃO: Salvar despesas com referência CORRETA
+        for despesa_data in despesas:
+            nome_despesa = despesa_data.get("nome")
+            valor_despesa = despesa_data.get("valor")
+
+            if not nome_despesa or valor_despesa is None:
+                return jsonify({"error": "Dados incompletos para a despesa."}), 400
+
+            despesa = Despesa(
+                nome=nome_despesa,
+                valor=valor_despesa,
+                proposta_servico_id=proposta_id,  # ✅ CAMPO CORRETO
+                user_id=user_principal_id,
+                subusuario_id=subusuario_id
+            )
+            db.session.add(despesa)
+
+        # Atualizar o status da proposta
+        proposta.status = "Disputa"
+        db.session.commit()
+
+        # ✅ LIMPAR SESSÃO APÓS FINALIZAR COM SUCESSO
+        limpar_sessao_servicos_atual()
+
+        app.logger.info(f"Passo 2 de serviços salvo e sessão limpa para usuário {user_principal_id}")
+
+        return jsonify({"message": "Passo 2 salvo com sucesso e proposta finalizada!"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao salvar o Passo 2 de serviços: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Erro interno no servidor: {str(e)}"}), 500
+
+
+@app.route("/servicos/consultar_cnpj", methods=["GET"])
+@login_required
+def consultar_cnpj_servicos():
+    """
+    Consulta CNPJ na API da Receita Federal
+    """
+    cnpj = request.args.get("cnpj")
+    if not cnpj or len(cnpj) != 14 or not cnpj.isdigit():
+        return jsonify({"error": "CNPJ inválido ou não fornecido."}), 400
+
+    try:
+        response = requests.get(f"https://receitaws.com.br/v1/cnpj/{cnpj}")
+        if response.status_code != 200:
+            return jsonify({"error": "Erro ao consultar o CNPJ."}), response.status_code
+
+        data = response.json()
+        if data.get("status") != "OK":
+            return jsonify({"error": data.get("message", "Erro desconhecido na API.")}), 400
+
+        return jsonify({
+            "razao_social": data.get("nome", "Não disponível"),
+            "endereco": f"{data.get('logradouro', '')}, {data.get('numero', '')}, {data.get('bairro', '')}, {data.get('municipio', '')} - {data.get('uf', '')} - CEP: {data.get('cep', '')}"
+        }), 200
+    except Exception as e:
+        app.logger.error(f"Erro ao consultar CNPJ: {str(e)}")
+        return jsonify({"error": "Erro ao consultar o CNPJ."}), 500
+
+
+@app.route(f"{SERVICO_PREFIX}/lotes/criar", methods=["POST"])
+@login_required
+def criar_lote_servico():
+    try:
+        data = request.json
+        nome = data.get("nome")
+        proposta_id = data.get("proposta_id")
+
+        if not nome or not proposta_id:
+            return jsonify({"error": "O nome do lote e o ID da proposta são obrigatórios."}), 400
+
+        # ✅ LÓGICA ORIGINAL: proposta_id (não proposta_servico_id)
+        lote = Lote(
+            nome=nome,
+            proposta_id=proposta_id,  # ✅ CAMPO ORIGINAL
+            user_id=current_user.id,
+            subusuario_id=getattr(current_user, "subusuario_id", None),
+        )
+        db.session.add(lote)
+        db.session.commit()
+
+        return jsonify({"message": "Lote criado com sucesso!", "lote_id": lote.id}), 201
+    except Exception as e:
+        return jsonify({"error": f"Erro ao criar lote: {str(e)}"}), 500
+
+
+@app.route(f"/servicos/servicos/adicionar", methods=["POST"])
+@login_required
+def adicionar_servico_lote():
+    """
+    Adiciona um serviço a um lote
+    """
+    try:
+        data = request.json
+        campos_obrigatorios = ["nome", "unidade_medida", "custo_unitario", "quantidade", "valor_venda", "lote_id"]
+
+        if not all(campo in data for campo in campos_obrigatorios):
+            return jsonify({"error": "Todos os campos obrigatórios devem ser preenchidos."}), 400
+
+        # Determinar usuário principal e subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        servico = Servico(
+            nome=data["nome"],
+            unidade_medida=data["unidade_medida"],
+            custo_unitario=float(data["custo_unitario"]),
+            quantidade=int(data["quantidade"]),
+            valor_venda=float(data["valor_venda"]),
+            lote_id=int(data["lote_id"]),
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id,
+        )
+        db.session.add(servico)
+        db.session.commit()
+
+        return jsonify({"message": "Serviço adicionado com sucesso!", "servico_id": servico.id}), 201
+    except Exception as e:
+        app.logger.error(f"Erro ao adicionar serviço: {str(e)}")
+        return jsonify({"error": f"Erro ao adicionar serviço: {str(e)}"}), 500
+
+
+@app.route(f"/servicos/despesas/adicionar", methods=["POST"])
+@login_required
+def adicionar_despesa_variavel():
+    """
+    Adiciona despesas variáveis
+    """
+    try:
+        data = request.json
+        proposta_id = data.get("proposta_id")
+        despesas = data.get("despesas", [])
+
+        if not proposta_id or not despesas:
+            return jsonify({"error": "ID da proposta e despesas são obrigatórios."}), 400
+
+        # Determinar usuário principal e subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        for despesa_data in despesas:
+            despesa = Despesa(
+                nome=despesa_data["nome"],
+                valor=float(despesa_data["valor"]),
+                proposta_servico_id=proposta_id,
+                user_id=user_principal_id,
+                subusuario_id=subusuario_id,
+            )
+            db.session.add(despesa)
+
+        db.session.commit()
+        return jsonify({"message": "Despesas adicionadas com sucesso!"}), 201
+    except Exception as e:
+        app.logger.error(f"Erro ao adicionar despesas: {str(e)}")
+        return jsonify({"error": f"Erro ao adicionar despesas: {str(e)}"}), 500
+
+
+@app.route(f"{SERVICO_PREFIX}/resumo", methods=["GET"])
+@login_required
+def obter_resumo_precificacao():
+    try:
+        proposta_id = request.args.get("proposta_id")
+        if not proposta_id:
+            return jsonify({"error": "ID da proposta é obrigatório."}), 400
+
+        # ✅ LÓGICA ORIGINAL: proposta_id + current_user.id
+        lotes = Lote.query.filter_by(proposta_id=proposta_id, user_id=current_user.id).all()
+        despesas = Despesa.query.filter_by(proposta_id=proposta_id, user_id=current_user.id).all()
+
+        total_custo = sum(s.custo_unitario * s.quantidade for lote in lotes for s in lote.servicos)
+        total_despesas = sum(d.valor for d in despesas)
+        total_venda = sum(s.valor_venda for lote in lotes for s in lote.servicos)
+        lucro_total = total_venda - total_custo - total_despesas
+
+        resumo = {
+            "total_custo": total_custo,
+            "total_despesas": total_despesas,
+            "total_venda": total_venda,
+            "lucro_total": lucro_total,
+        }
+        return jsonify(resumo), 200
+    except Exception as e:
+        return jsonify({"error": f"Erro ao obter resumo: {str(e)}"}), 500
+
+
+# ===== VERIFICAÇÃO DE DADOS SALVOS =====
+
+@app.route("/servicos/debug/<int:proposta_id>", methods=["GET"])
+@login_required
+def debug_proposta_servicos(proposta_id):
+    """Rota para debug - verificar dados salvos"""
+    try:
+        # Determinar usuário principal
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+        else:
+            user_principal_id = current_user.id
+
+        # Verificar proposta
+        proposta = CalculadoraPasso1Servicos.query.filter_by(
+            id=proposta_id,
+            user_id=user_principal_id
+        ).first()
+
+        if not proposta:
+            return jsonify({"error": "Proposta não encontrada"}), 404
+
+        # Verificar lotes
+        lotes = Lote.query.filter_by(
+            proposta_servico_id=proposta_id,
+            user_id=user_principal_id
+        ).all()
+
+        # Verificar despesas
+        despesas = Despesa.query.filter_by(
+            proposta_servico_id=proposta_id,
+            user_id=user_principal_id
+        ).all()
+
+        # Montar resposta de debug
+        debug_info = {
+            "proposta": {
+                "id": proposta.id,
+                "numero_processo": proposta.numero_processo,
+                "razao_social": proposta.razao_social,
+                "status": proposta.status
+            },
+            "lotes": [],
+            "despesas": []
+        }
+
+        for lote in lotes:
+            lote_info = {
+                "id": lote.id,
+                "nome": lote.nome,
+                "proposta_servico_id": lote.proposta_servico_id,
+                "proposta_tipo": lote.proposta_tipo,
+                "servicos": []
+            }
+
+            for servico in lote.servicos:
+                lote_info["servicos"].append({
+                    "id": servico.id,
+                    "nome": servico.nome,
+                    "quantidade": servico.quantidade,
+                    "custo_unitario": servico.custo_unitario,
+                    "valor_venda": servico.valor_venda
+                })
+
+            debug_info["lotes"].append(lote_info)
+
+        for despesa in despesas:
+            debug_info["despesas"].append({
+                "id": despesa.id,
+                "nome": despesa.nome,
+                "valor": despesa.valor,
+                "proposta_servico_id": despesa.proposta_servico_id
+            })
+
+        return jsonify(debug_info), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/servicos/sessao/carregar', methods=['GET'])
+@login_required
+def carregar_sessao_servicos():
+    try:
+        if not current_user.is_authenticated:
+            return jsonify({"error": "Sessão expirada"}), 401
+
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # ✅ USAR CALCULADORASESSAOSERVICOS
+        sessao = CalculadoraSessaoServicos.query.filter_by(
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id
+        ).first()
+
+        if sessao and sessao.expires_at > datetime.now():
+            dados = sessao.get_dados_sessao()
+            app.logger.info(f"✅ Sessão de serviços carregada - ID: {sessao.id}")
+            return jsonify({
+                "dados_sessao": dados,
+                "passo_atual": sessao.passo_atual
+            }), 200
+        else:
+            app.logger.info("ℹ️ Nenhuma sessão de serviços válida para carregar")
+            return jsonify({"error": "Nenhuma sessão encontrada"}), 404
+
+    except Exception as e:
+        app.logger.error(f"❌ Erro ao carregar sessão de serviços: {str(e)}")
+        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+
+
+@app.route('/servicos/sessao/limpar', methods=['DELETE'])
+@login_required
+def limpar_sessao_servicos():
+    """
+    Remove a sessão salva da calculadora de serviços
+    """
+    try:
+        # Log para depuração
+        app.logger.info(f"Limpando sessão de serviços para usuário ID={current_user.id}")
+
+        # Verificar se o usuário está autenticado
+        if not current_user.is_authenticated:
+            app.logger.error("Tentativa de limpar sessão de serviços sem autenticação.")
+            return jsonify({'error': 'Usuário não autenticado.'}), 401
+
+        # Determinar o usuário principal e o subusuário
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # Buscar e remover sessão
+        sessao = CalculadoraSessaoServicos.query.filter_by(
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id
+        ).first()
+
+        if sessao:
+            db.session.delete(sessao)
+            db.session.commit()
+            app.logger.info(f"Sessão de serviços {sessao.id} removida com sucesso")
+            return jsonify({'message': 'Sessão de serviços removida com sucesso!'}), 200
+        else:
+            app.logger.info(f"Nenhuma sessão de serviços encontrada para remover - usuário {user_principal_id}")
+            return jsonify({'message': 'Nenhuma sessão de serviços encontrada.'}), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro ao limpar sessão de serviços: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Erro interno ao limpar a sessão de serviços.', 'details': str(e)}), 500
+
+
+@app.route('/servicos/sessao/verificar', methods=['GET'])
+@login_required
+def verificar_sessao_servicos():
+    try:
+        if not current_user.is_authenticated:
+            return jsonify({"tem_sessao": False}), 401
+
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+            subusuario_id = current_user.id
+        else:
+            user_principal_id = current_user.id
+            subusuario_id = None
+
+        # ✅ USAR CALCULADORASESSAOSERVICOS
+        sessao = CalculadoraSessaoServicos.query.filter_by(
+            user_id=user_principal_id,
+            subusuario_id=subusuario_id
+        ).first()
+
+        if sessao and sessao.expires_at > datetime.now():
+            app.logger.info(f"✅ Sessão de serviços encontrada - ID: {sessao.id}")
+            return jsonify({"tem_sessao": True}), 200
+        else:
+            app.logger.info("ℹ️ Nenhuma sessão de serviços válida encontrada")
+            return jsonify({"tem_sessao": False}), 200
+
+    except Exception as e:
+        app.logger.error(f"❌ Erro ao verificar sessão de serviços: {str(e)}")
+        return jsonify({"tem_sessao": False}), 500
+
+
+@app.route('/servicos/sessao/limpeza', methods=['POST'])
+def limpeza_sessoes_servicos_expiradas():
+    """
+    Remove sessões de serviços expiradas (pode ser chamada por um cron job)
+    """
+    try:
+        # Buscar sessões expiradas
+        sessoes_expiradas = CalculadoraSessaoServicos.query.filter(
+            CalculadoraSessaoServicos.expires_at < datetime.utcnow()
+        ).all()
+
+        count = len(sessoes_expiradas)
+
+        # Remover sessões expiradas
+        for sessao in sessoes_expiradas:
+            db.session.delete(sessao)
+
+        db.session.commit()
+
+        app.logger.info(f"Limpeza automática de serviços: {count} sessões expiradas removidas")
+
+        return jsonify({
+            'message': f'{count} sessões de serviços expiradas removidas com sucesso!',
+            'count': count
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro na limpeza de sessões de serviços: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': 'Erro interno na limpeza de sessões de serviços.', 'details': str(e)}), 500
+
+
+# ---------------fim calculadora de serviços-----------------
+
+@app.route('/gerador_documentos/propostas')
+@login_required
+def gerador_documentos_propostas():
+    return redirect(url_for('listar_propostas'))
+
+
+@app.route('/gerador_documentos/propostas')
+@login_required
+def propostas():
+    return render_template('propostas.html')
+
+
+@app.route("/simulacao/produtos", methods=["GET"])
+@login_required
+def simulacao_produtos():
+    # Buscar todas as propostas de produtos do usuário
+    propostas_produtos = CalculadoraPasso1.query.filter_by(user_id=current_user.id).all()
+
+    return render_template("simulacao.html", propostas=propostas_produtos, tipo="Produtos")
+
+
+# ------------------------- PAGINA PROPOSTAS -------------------
+@app.route('/propostas', methods=['GET'])
+@login_required
+def listar_propostas():
+    """
+    Lista as propostas associadas ao usuário principal e, no caso de subusuários,
+    lista apenas as propostas vinculadas a eles.
+    """
+    try:
+        user_id = session.get('user_id')  # ID do usuário logado
+        user_type = session.get('user_type')  # Tipo de usuário (user/subusuario)
+
+        # Determinar o usuário principal para subusuários
+        user_principal_id = (
+            current_user.user_principal_id if user_type == 'subusuario' else current_user.id
+        )
+
+        # Query para buscar propostas excluindo as que não devem aparecer
+        if user_type == 'subusuario':
+            propostas = CalculadoraPasso1.query.filter(
+                CalculadoraPasso1.user_id == user_principal_id,
+                CalculadoraPasso1.subusuario_id == user_id,
+                ~CalculadoraPasso1.status.in_(['Adjudica', 'Perdida', 'Anulada', 'Prazo Vencido'])
+            ).all()
+        else:
+            propostas = CalculadoraPasso1.query.filter(
+                CalculadoraPasso1.user_id == user_principal_id,
+                ~CalculadoraPasso1.status.in_(['Adjudica', 'Perdida', 'Anulada', 'Prazo Vencido'])
+            ).all()
+
+        # Preparar os dados para exibição na tabela
+        lista_propostas = []
+        for proposta in propostas:
+            # Calcular o valor total
+            produtos = Produto.query.filter_by(calculadora_passo1_id=proposta.id).all()
+            valor_total = sum(produto.quantidade * produto.venda for produto in produtos)
+
+            # Identificar o criador (usuário principal ou subusuário)
+            criador = None
+            if proposta.subusuario_id:
+                subusuario = Subusuario.query.get(proposta.subusuario_id)
+                criador = subusuario.nome if subusuario else "Subusuário Desconhecido"
+            else:
+                usuario_principal = User.query.get(proposta.user_id)
+                criador = usuario_principal.nome if usuario_principal else "Usuário Desconhecido"
+
+            # Adicionar dados formatados à lista
+            lista_propostas.append({
+                'id': proposta.id,
+                'numero_processo': proposta.numero_processo,
+                'cnpj': proposta.cnpj,
+                'razao_social': proposta.razao_social,
+                'valor_total': f"R$ {valor_total:,.2f}",
+                'criador': criador,
+                'status': proposta.status
+            })
+
+        # Renderizar a página de propostas com os dados
+        return render_template('propostas.html', propostas=lista_propostas)
+    except Exception as e:
+        app.logger.error(f"Erro ao listar propostas: {str(e)}")
+        return render_template('propostas.html', propostas=[])
+
+
+@app.route('/proposta/<int:proposta_id>/detalhes', methods=['GET'])
+@login_required
+def detalhes_proposta(proposta_id):
+    try:
+        empresa = Empresa.query.first()
+        imposto_venda = getattr(empresa, 'imposto_venda', 0.0)
+
+        # 🔹 Busca a proposta
+        proposta = CalculadoraPasso1.query.get(proposta_id)
+        if not proposta:
+            return jsonify({'error': 'Proposta não encontrada'}), 404
+
+        produtos = Produto.query.filter_by(calculadora_passo1_id=proposta_id).all()
+        if not produtos:
+            return jsonify({'produtos': [], 'totais': {
+                'custoTotal': 0.0,
+                'custoFrete': 0.0,
+                'quantidadeTotal': 0,
+                'referenciaTotal': 0.0,
+                'impostoTotal': 0.0,
+                'vendaTotal': 0.0,
+                'lucroTotal': 0.0,
+            }, 'obs': ""})  # Se não houver produtos, obs retorna vazio
+
+        # 🔹 Captura a observação da query string (se existir)
+        obs = request.args.get('obs', "")
+
+        # Inicializa os totais
+        custoTotal = 0.0
+        quantidadeTotal = 0
+        referenciaTotal = 0.0
+        impostoTotal = 0.0
+        vendaTotal = 0.0
+        lucroTotal = 0.0
+        custoFrete = 0.0
+
+        frete_registrado = False
+
+        for index, produto in enumerate(produtos):
+            custo = produto.custo or 0.0
+            quantidade = produto.quantidade or 0
+            referencia = produto.referencia or 0.0
+            venda = produto.venda or 0.0
+
+            imposto = (venda * imposto_venda / 100) * quantidade
+
+            custoTotal += custo * quantidade
+            quantidadeTotal += quantidade
+            referenciaTotal += referencia * quantidade
+            impostoTotal += imposto
+            vendaTotal += venda * quantidade
+
+            if not frete_registrado and produto.frete:
+                custoFrete = produto.frete
+                frete_registrado = True
+
+        lucroTotal = vendaTotal - (custoTotal + custoFrete + impostoTotal)
+
+        produtos_json = [{
+            'nome': produto.nome,
+            'marca_modelo': produto.marca_modelo,
+            'custo': produto.custo or 0.0,
+            'quantidade': produto.quantidade or 0,
+            'venda': produto.venda or 0.0,
+            'frete': produto.frete if index == 0 else 0.0,
+            'lucro_total': vendaTotal - (custoTotal + custoFrete + impostoTotal),
+            'imposto_aplicado': round((produto.venda * imposto_venda / 100), 2)
+        } for index, produto in enumerate(produtos)]
+
+        return jsonify({
+            'produtos': produtos_json,
+            'totais': {
+                'custoTotal': round(custoTotal, 2),
+                'custoFrete': round(custoFrete, 2),
+                'quantidadeTotal': quantidadeTotal,
+                'referenciaTotal': round(referenciaTotal, 2),
+                'impostoTotal': round(impostoTotal, 2),
+                'vendaTotal': round(vendaTotal, 2),
+                'lucroTotal': round(lucroTotal, 2),
+            },
+            'obs': obs  # 🔹 Agora o campo obs pode ser passado dinamicamente na requisição!
+        })
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar detalhes da proposta {proposta_id}: {e}")
+        return jsonify(
+            {'error': 'Erro ao carregar os detalhes da proposta. Verifique os dados e tente novamente.'}), 500
+
+
+def numero_para_palavras(numero):
+    unidades = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"]
+    especiais = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"]
+    dezenas = ["", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"]
+    centenas = ["", "cem", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos",
+                "oitocentos", "novecentos"]
+
+    if numero == 0:
+        return "zero"
+
+    if numero < 10:
+        return unidades[numero]
+
+    if numero < 20:
+        return especiais[numero - 10]
+
+    if numero < 100:
+        dezena = dezenas[numero // 10]
+        unidade = unidades[numero % 10]
+        return dezena if unidade == "" else f"{dezena} e {unidade}"
+
+    if numero < 1000:
+        centena = centenas[numero // 100]
+        if numero == 100:
+            return "cem"
+        resto = numero % 100
+        return centena if resto == 0 else f"{centena} e {numero_para_palavras(resto)}"
+
+    if numero < 1000000:
+        milhar = numero // 1000
+        resto = numero % 1000
+        if milhar == 1:
+            prefixo = "mil"
+        else:
+            prefixo = f"{numero_para_palavras(milhar)} mil"
+
+        return prefixo if resto == 0 else f"{prefixo} {numero_para_palavras(resto)}"
+
+    if numero < 1000000000:
+        milhao = numero // 1000000
+        resto = numero % 1000000
+        prefixo = "um milhão" if milhao == 1 else f"{numero_para_palavras(milhao)} milhões"
+
+        return prefixo if resto == 0 else f"{prefixo} {numero_para_palavras(resto)}"
+
+    return "Número muito grande para converter"
+
+
+# =========================
+# IMPORTS (garanta que todos estejam no topo do seu app.py)
+# =========================
+import os
+from io import BytesIO
+from datetime import datetime
+import base64
+from urllib.parse import urlparse
+from urllib.request import urlopen
+
+from flask import send_file, flash, redirect, url_for, request, session, current_app
+from flask_login import current_user, login_required
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT  # <<< CORREÇÃO AQUI
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm, inch
+from reportlab.lib.utils import ImageReader
+
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak,
+    Image, KeepTogether
+)
+# (Seus imports de models, etc., devem estar aqui)
+from models import Empresa, CalculadoraPasso1, Produto
+
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, KeepTogether
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader, simpleSplit
+from io import BytesIO
+from urllib.request import urlopen
+import base64, os
+
+
+# =========================
+# ROTA FINAL E CORRIGIDA
+# =========================
+@app.route('/proposta/<int:proposta_id>/imprimir', methods=['GET'])
+@login_required
+def imprimir_proposta(proposta_id):
+    try:
+        # --- 1) BUSCA DE DADOS ---
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+        proposta = CalculadoraPasso1.query.filter_by(
+            id=proposta_id, user_id=user_principal_id
+        ).first_or_404()
+
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        produtos = Produto.query.filter_by(calculadora_passo1_id=proposta_id).all()
+
+        if not empresa:
+            flash("Configure sua empresa para gerar propostas.", "danger")
+            return redirect(url_for('listar_propostas'))
+
+        obs = (request.args.get('obs', '') or '').strip()
+
+        # =========================
+        # 2) HELPERS
+        # =========================
+        def brl(valor):
+            try:
+                n = float(valor)
+                return "R$ " + f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except (ValueError, TypeError):
+                return "R$ 0,00"
+
+        def numero_por_extenso(valor):
+            valor = float(valor or 0)
+            if valor == 0: return "Zero reais"
+            reais, centavos = int(valor), int(round((valor - int(valor)) * 100))
+            unidades = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"]
+            dezenas = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta",
+                       "noventa"]
+            especiais = ["", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito",
+                         "dezenove"]
+            centenas = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos",
+                        "oitocentos", "novecentos"]
+
+            def get_extenso(n):
+                if n == 100: return "cem"
+                if n == 0: return ""
+                texto = ""
+                c, d, u = n // 100, (n % 100) // 10, n % 10
+                if c: texto += centenas[c]
+                if d == 1 and u > 0:
+                    if c: texto += " e "
+                    texto += especiais[u]
+                else:
+                    if d:
+                        if c: texto += " e "
+                        texto += dezenas[d]
+                    if u:
+                        if d:
+                            texto += " e "
+                        elif c:
+                            texto += " e "
+                        texto += unidades[u]
+                return texto.strip()
+
+            partes_reais = []
+            milhoes = reais // 1_000_000
+            milhares = (reais % 1_000_000) // 1_000
+            unidades_ = reais % 1_000
+            if milhoes: partes_reais.append(f"{get_extenso(milhoes)} {'milhão' if milhoes == 1 else 'milhões'}")
+            if milhares: partes_reais.append("mil" if milhares == 1 else f"{get_extenso(milhares)} mil")
+            if unidades_: partes_reais.append(get_extenso(unidades_))
+            txt_reais = " e ".join(filter(None, partes_reais))
+            if txt_reais: txt_reais += " " + ("real" if reais == 1 else "reais")
+            txt_centavos = ""
+            if centavos: txt_centavos = f"{get_extenso(centavos)} {'centavo' if centavos == 1 else 'centavos'}"
+            if txt_reais and txt_centavos: return (txt_reais + " e " + txt_centavos).capitalize()
+            return (txt_reais or txt_centavos or "Zero reais").capitalize()
+
+        # ### FIX: logo robusta (aceita base64, URL ou caminhos; não quebra se não achar)
+        def get_logo_source(logo_value):
+            if not logo_value: return None
+            try:
+                if isinstance(logo_value, (bytes, bytearray)):
+                    return BytesIO(logo_value)
+
+                logo_str = str(logo_value).strip()
+
+                if logo_str.startswith("data:image"):
+                    return BytesIO(base64.b64decode(logo_str.split(",", 1)[1]))
+
+                if logo_str.startswith(("http://", "https://")):
+                    with urlopen(logo_str, timeout=5) as r:
+                        return BytesIO(r.read())
+
+                base_path = current_app.root_path
+                candidates = [
+                    logo_str,
+                    os.path.join(base_path, logo_str.lstrip('/')),
+                    os.path.join(current_app.static_folder, logo_str.lstrip('/')),
+                ]
+                if '/home/precificaja/apps_wsgi/precificaja/' in logo_str:
+                    clean_path = logo_str.split('/home/precificaja/apps_wsgi/precificaja/')[-1]
+                    candidates.append(os.path.join(base_path, clean_path))
+
+                for path in candidates:
+                    if os.path.exists(path) and os.path.isfile(path):
+                        return path
+
+                app.logger.warning(f"[logo] Arquivo não encontrado: {logo_str}")
+                return None
+            except Exception as e:
+                app.logger.error(f"[logo] Erro ao carregar fonte da logo: {e}")
+                return None
+
+        # ### FIX: quebra controlada de “palavrões” e estimativa de linhas
+        def inject_zwsp(s, max_run=24):
+            if not s:
+                return s
+            out, run = [], 0
+            for ch in s:
+                if ch.isspace():
+                    run = 0
+                    out.append(ch)
+                else:
+                    run += 1
+                    out.append(ch)
+                    if run >= max_run:
+                        out.append("\u200b")  # zero-width space
+                        run = 0
+            return "".join(out)
+
+        # --- 3) CONFIGURAÇÃO DO DOCUMENTO ---
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            topMargin=2 * cm, bottomMargin=2.5 * cm,
+            leftMargin=2 * cm, rightMargin=2 * cm,
+        )
+        story = []
+        styles = getSampleStyleSheet()
+
+        logo_source_for_platypus = get_logo_source(getattr(empresa, 'logo', None))
+
+        # --- 4) FUNÇÃO DE EVENTO PARA MARCA D’ÁGUA E RODAPÉ ---
+        def on_each_page(canvas, doc):
+            canvas.saveState()
+            canvas.setFont('Helvetica', 8)
+            canvas.drawRightString(doc.width + doc.leftMargin, 1.5 * cm, f"Página {doc.page}")
+            if logo_source_for_platypus:
+                try:
+                    # alguns canvases não têm setFillAlpha; por isso o try/except
+                    try:
+                        canvas.setFillAlpha(0.08)
+                    except Exception:
+                        pass
+                    logo_reader = ImageReader(logo_source_for_platypus)
+                    canvas.drawImage(
+                        logo_reader,
+                        doc.leftMargin + (doc.width / 4),
+                        doc.height / 3,
+                        width=300, height=150,
+                        mask='auto', preserveAspectRatio=True
+                    )
+                except Exception:
+                    pass
+            canvas.restoreState()
+
+        # --- 5) CONSTRUÇÃO DOS FLOWABLES ---
+
+        # CABEÇALHO (inalterado, só garantindo que a logo não quebre)
+        elementos_cabecalho = []
+        style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], alignment=TA_CENTER, fontSize=14,
+                                      spaceAfter=12)
+        style_box = ParagraphStyle('Box', parent=styles['BodyText'], fontSize=9, leading=11)
+        style_secao = ParagraphStyle('Secao', parent=styles['Heading2'], fontSize=11, spaceAfter=6)
+        style_linha = ParagraphStyle('Linha', parent=styles['BodyText'], fontSize=9, leading=11, spaceAfter=2)
+
+        if logo_source_for_platypus:
+            try:
+                logo = Image(logo_source_for_platypus, width=4 * cm, height=2 * cm, hAlign='CENTER')
+                elementos_cabecalho.append(logo)
+                elementos_cabecalho.append(Spacer(1, 0.5 * cm))
+            except Exception:
+                pass
+
+        elementos_cabecalho.append(Paragraph("CARTA PROPOSTA DE PRODUTO", style_titulo))
+
+        linhas_empresa = [
+            f"<b>Razão Social:</b> {empresa.razao_social}",
+            f"<b>CNPJ:</b> {empresa.cnpj}",
+            f"<b>Endereço:</b> {empresa.endereco}",
+            f"<b>Telefone:</b> {empresa.telefone or 'N/A'}",
+            f"<b>E-mail:</b> {empresa.email or 'N/A'}"
+        ]
+        tabela_box = Table([[Paragraph(l, style_box)] for l in linhas_empresa], colWidths=[doc.width])
+        tabela_box.setStyle(TableStyle([
+            ('BOX', (0, 0), (-1, -1), 1, colors.black),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6)
+        ]))
+        elementos_cabecalho.append(tabela_box)
+        elementos_cabecalho.append(Spacer(1, 0.8 * cm))
+
+        if all([empresa.banco, empresa.agencia, empresa.conta, empresa.pix]):
+            elementos_cabecalho.append(Paragraph("Dados Bancários:", style_secao))
+            dados_bancarios = [
+                f"<b>Banco:</b> {empresa.banco}",
+                f"<b>Agência:</b> {empresa.agencia}",
+                f"<b>Conta:</b> {empresa.conta}",
+                f"<b>PIX:</b> {empresa.pix}"
+            ]
+            for linha in dados_bancarios:
+                elementos_cabecalho.append(Paragraph(linha, style_linha))
+            elementos_cabecalho.append(Spacer(1, 0.6 * cm))
+
+        elementos_cabecalho.append(Paragraph("Detalhes da Proposta:", style_secao))
+        detalhes = [
+            f"<b>Proposta ID:</b> {proposta.id}",
+            f"<b>Órgão Vinculado:</b> {proposta.razao_social}",
+            f"<b>Processo Nº:</b> {proposta.numero_processo}",
+            f"<b>Local de Entrega:</b> {proposta.local_entrega}",
+            f"<b>Prazo de Entrega:</b> {proposta.prazo_entrega} dias",
+            f"<b>Validade:</b> {proposta.validade_proposta} dias"
+        ]
+        for linha in detalhes:
+            elementos_cabecalho.append(Paragraph(linha, style_linha))
+
+        story.append(KeepTogether(elementos_cabecalho))
+        story.append(Spacer(1, 0.8 * cm))
+
+        # =========================
+        # TABELA DE PRODUTOS
+        # =========================
+        # ### FIX: estilos pequenos e com quebra de palavra agressiva
+        style_head = ParagraphStyle('Head', parent=styles['BodyText'], alignment=TA_LEFT, leading=12, fontSize=10)
+        style_cell = ParagraphStyle(
+            'Cell', parent=styles['BodyText'],
+            alignment=TA_LEFT, fontSize=8, leading=10,
+            wordWrap='CJK',  # permite quebra no meio de palavras longas
+            splitLongWords=1
+        )
+
+        header = [Paragraph(f"<b>{txt}</b>", style_head) for txt in
+                  ["# Item", "Nome do Produto", "Marca / Modelo", "Qtd", "Unid.", "Valor Unit.", "Valor Total"]]
+        table_data = [header]
+
+        # colWidths devem somar <= doc.width
+        W = doc.width
+        col_widths = [
+            W * 0.07,  # #
+            W * 0.30,  # Nome
+            W * 0.20,  # Marca/Modelo
+            W * 0.06,  # Qtd
+            W * 0.08,  # Unid
+            W * 0.14,  # V.Unit
+            W * 0.15,  # V.Total
+        ]
+
+        # ### FIX: função que divide textos gigantes em "continuação" (múltiplas linhas da tabela)
+        def split_into_segments(text, col_w, max_lines=45):
+            """Quebra o texto em blocos (Paragraphs) para que nenhuma linha da Tabela fique mais alta que a página."""
+            text = inject_zwsp((text or '').strip())
+            if not text:
+                return [Paragraph("", style_cell)]
+
+            # estimar quantas linhas cabem naquela largura
+            # desconta paddings laterais (~8pt de cada lado)
+            usable_w = max(col_w - 12, col_w * 0.9)
+            lines = simpleSplit(text, style_cell.fontName, style_cell.fontSize, usable_w)
+
+            if len(lines) <= max_lines:
+                return [Paragraph(text, style_cell)]
+
+            segs, buf = [], []
+            for ln in lines:
+                buf.append(ln)
+                if len(buf) >= max_lines:
+                    segs.append(Paragraph("<br/>".join(buf), style_cell))
+                    buf = []
+            if buf:
+                segs.append(Paragraph("<br/>".join(buf), style_cell))
+            return segs
+
+        for i, p in enumerate(produtos, 1):
+            qtd = p.quantidade or 0
+            vunit = p.venda or 0.0
+            total = qtd * vunit
+
+            nome_segs = split_into_segments(p.nome or "", col_widths[1])
+            marca_segs = split_into_segments(p.marca_modelo or "", col_widths[2])
+
+            n_rows = max(len(nome_segs), len(marca_segs))
+            for idx in range(n_rows):
+                # usa o segmento correspondente ou vazio
+                nome_cell = nome_segs[idx] if idx < len(nome_segs) else Paragraph("", style_cell)
+                marca_cell = marca_segs[idx] if idx < len(marca_segs) else Paragraph("", style_cell)
+
+                if idx == 0:
+                    # primeira linha do item (com números)
+                    table_data.append([
+                        Paragraph(str(p.numero_item or i), style_cell),
+                        nome_cell,
+                        marca_cell,
+                        Paragraph(f"{qtd:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), style_cell),
+                        Paragraph(p.unidade_medida or "", style_cell),
+                        Paragraph(brl(vunit), style_cell),
+                        Paragraph(brl(total), style_cell),
+                    ])
+                else:
+                    # linhas de continuação – só as colunas textuais
+                    table_data.append([
+                        Paragraph("", style_cell),
+                        nome_cell,
+                        marca_cell,
+                        Paragraph("", style_cell),
+                        Paragraph("", style_cell),
+                        Paragraph("", style_cell),
+                        Paragraph("", style_cell),
+                    ])
+
+        table = Table(table_data, colWidths=col_widths, repeatRows=1, splitByRow=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0275d8")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # ### FIX: células começam no topo
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F0F0F0")]),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 1 * cm))
+
+        # SEÇÕES FINAIS (inalteradas)
+        total_geral = sum((p.quantidade or 0) * (p.venda or 0) for p in produtos)
+        story.append(Paragraph("Resumo Geral", style_secao))
+        story.append(
+            Paragraph(f"<b>Valor Total: {brl(total_geral)}</b> ({numero_por_extenso(total_geral)})", style_head))
+        if obs:
+            story.append(Paragraph("Observações", style_secao))
+            story.append(Paragraph(inject_zwsp(obs), style_head))
+
+        story.append(Paragraph("Declarações", style_secao))
+        declaracoes = [
+            "<b>1. Conformidade:</b> Declaramos que os produtos ofertados atendem a todas as especificações exigidas.",
+            "<b>2. Custos:</b> Declaramos que o preço indicado contempla todos os custos, incluindo tributos, frete e lucro.",
+            "<b>3. Validade:</b> Declaramos que os preços permanecem válidos pelo prazo estabelecido no edital.",
+            "<b>4. Capacidade:</b> Declaramos possuir a capacidade técnica e operacional para o fornecimento dos produtos."
+        ]
+        for dec in declaracoes:
+            story.append(Paragraph(dec, style_head))
+        story.append(Spacer(1, 1.5 * cm))
+
+        # ASSINATURA
+        style_assinatura = ParagraphStyle('Assinatura', parent=styles['BodyText'], alignment=TA_CENTER)
+        story.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y')}",
+                               ParagraphStyle('Data', alignment=TA_LEFT, spaceAfter=18)))
+        story.append(Paragraph("______________________________________", style_assinatura))
+        story.append(Paragraph(f"<b>{empresa.nome_socio or 'Assinatura Autorizada'}</b>", style_assinatura))
+        if getattr(empresa, 'cpf_socio', None):
+            story.append(Paragraph(f"CPF: {empresa.cpf_socio}", style_assinatura))
+        story.append(Paragraph(empresa.razao_social, style_assinatura))
+
+        # --- 6) GERAÇÃO DO PDF ---
+        doc.build(story, onFirstPage=on_each_page, onLaterPages=on_each_page)
+
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f"Carta_Proposta_{proposta_id}.pdf",
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF da proposta: {e}", exc_info=True)
+        flash("Ocorreu um erro crítico ao gerar o PDF da proposta.", "danger")
+        return redirect(url_for('simulacao'))
+
+
+@app.route('/proposta/<int:proposta_id>/excluir', methods=['DELETE'])
+@login_required
+def excluir_proposta(proposta_id):
+    """
+    Exclui uma proposta e seus produtos associados.
+    """
+    try:
+        # Determinar se é subusuário ou usuário principal
+        user_id = current_user.id
+        user_type = session.get('user_type')
+        user_principal_id = (
+            current_user.user_principal_id if user_type == 'subusuario' else user_id
+        )
+
+        # Buscar a proposta garantindo que pertence ao usuário principal ou subusuário
+        proposta = CalculadoraPasso1.query.filter(
+            CalculadoraPasso1.id == proposta_id,
+            CalculadoraPasso1.user_id == user_principal_id
+        ).first_or_404()
+
+        # Excluir os produtos relacionados
+        produtos = Produto.query.filter_by(calculadora_passo1_id=proposta.id).all()
+        for produto in produtos:
+            db.session.delete(produto)
+
+        # Excluir a proposta
+        db.session.delete(proposta)
+        db.session.commit()
+
+        return jsonify({'message': 'Proposta excluída com sucesso.'}), 200
+    except Exception as e:
+        app.logger.error(f"Erro ao excluir proposta: {e}")
+        return jsonify({'error': 'Erro ao excluir proposta.'}), 500
+
+
+@app.route('/proposta/<int:proposta_id>/alterar_status', methods=['POST'])
+@login_required
+def alterar_status_proposta(proposta_id):
+    """
+    Altera o status de uma proposta.
+    """
+    try:
+        if not current_user.is_authenticated:
+            app.logger.error("Usuário não autenticado tentando alterar status.")
+            return jsonify({'error': 'Usuário não autenticado'}), 401  # 🔹 Retorna erro 401 ao invés de redirecionar
+
+        data = request.json
+        novo_status = data.get('status')
+        if novo_status not in ['Habilitação', 'Adjudica', 'Perdida', 'Anulada', 'Prazo Vencido']:
+            return jsonify({'error': 'Status inválido'}), 400
+
+        user_id = current_user.id
+        user_type = session.get('user_type')
+        user_principal_id = (
+            current_user.user_principal_id if user_type == 'subusuario' else user_id
+        )
+
+        # Buscar a proposta garantindo que pertence ao usuário principal ou subusuário
+        proposta = CalculadoraPasso1.query.filter(
+            CalculadoraPasso1.id == proposta_id,
+            CalculadoraPasso1.user_id == user_principal_id
+        ).first_or_404()
+
+        # Atualizar o status
+        proposta.status = novo_status
+        db.session.commit()
+
+        app.logger.info(f"✅ Status da proposta {proposta_id} alterado para {novo_status} por usuário {user_id}")
+
+        return jsonify({'success': True, 'message': 'Status atualizado com sucesso!'}), 200
+    except Exception as e:
+        app.logger.error(f"Erro ao alterar status da proposta {proposta_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# -------------PROPOSTAS DE SERVIÇOS-----------
+# 🔹 Listar propostas de serviços
+@app.route('/propostas_servicos', methods=['GET'])
+@login_required
+def listar_propostas_servicos():
+    """
+    Lista as propostas de serviços associadas ao usuário principal.
+    """
+    try:
+        user_id = session.get('user_id')  # ID do usuário logado
+        user_type = session.get('user_type')  # Tipo de usuário (user/subusuario)
+
+        # Determinar o usuário principal para subusuários
+        user_principal_id = (
+            current_user.user_principal_id if user_type == 'subusuario' else current_user.id
+        )
+
+        # 🔹 Filtrar propostas conforme o tipo de usuário
+        query = CalculadoraPasso1Servicos.query.filter(
+            CalculadoraPasso1Servicos.user_id == user_principal_id,
+            ~CalculadoraPasso1Servicos.status.in_(['Adjudica', 'Perdida', 'Anulada', 'Prazo Vencido'])
+        )
+
+        if user_type == 'subusuario':
+            query = query.filter(CalculadoraPasso1Servicos.subusuario_id == user_id)
+
+        propostas = query.all()
+
+        # 🔹 Monta os dados para exibição
+        lista_propostas = []
+        for proposta in propostas:
+            # Determina o criador da proposta
+            if proposta.subusuario_id:
+                subusuario = Subusuario.query.get(proposta.subusuario_id)
+                criador = subusuario.nome if subusuario else "Subusuário Desconhecido"
+            else:
+                usuario_principal = User.query.get(proposta.user_id)
+                criador = usuario_principal.nome if usuario_principal else "Usuário Desconhecido"
+
+            lista_propostas.append({
+                'id': proposta.id,
+                'numero_processo': proposta.numero_processo,
+                'cnpj': proposta.cnpj,
+                'razao_social': proposta.razao_social,
+                'criador': criador,
+                'status': proposta.status
+            })
+
+        return render_template('propostas_servicos.html', propostas=lista_propostas)
+
+    except Exception as e:
+        app.logger.error(f"❌ Erro ao listar propostas de serviços: {str(e)}")
+        return render_template('propostas_servicos.html', propostas=[])
+
+
+# Rotas Corrigidas - Contenção de Texto nas Células
+
+"""
+Aplicação das correções de overflow de texto nas duas rotas:
+1. /proposta_servico/<int:proposta_id>/imprimir
+2. /proposta_servico/<int:proposta_id>/relatorio
+
+INSTRUÇÕES:
+1. Adicione as funções auxiliares no início do arquivo
+2. Substitua as rotas originais pelas versões corrigidas abaixo
+3. Teste com dados reais
+"""
+
+
+# ============================================================================
+# FUNÇÕES AUXILIARES (ADICIONAR NO INÍCIO DO ARQUIVO)
+# ============================================================================
+
+def quebra_texto_melhorada(pdf_canvas, texto, largura_maxima, fonte="Helvetica", tamanho_fonte=10, padding=10):
+    """Quebra texto respeitando rigorosamente os limites da célula."""
+    if not texto or texto.strip() == "":
+        return [""]
+
+    largura_util = largura_maxima - (padding * 2)
+    if largura_util <= 0:
+        largura_util = largura_maxima * 0.8
+
+    palavras = str(texto).split()
+    linhas = []
+    linha_atual = ""
+
+    for palavra in palavras:
+        teste_linha = linha_atual + palavra if linha_atual == "" else linha_atual + " " + palavra
+        largura_teste = pdf_canvas.stringWidth(teste_linha, fonte, tamanho_fonte)
+
+        if largura_teste <= largura_util:
+            linha_atual = teste_linha
+        else:
+            if linha_atual:
+                linhas.append(linha_atual)
+                linha_atual = palavra
+            else:
+                linha_atual = quebra_palavra_longa(pdf_canvas, palavra, largura_util, fonte, tamanho_fonte)
+                if isinstance(linha_atual, list):
+                    linhas.extend(linha_atual[:-1])
+                    linha_atual = linha_atual[-1]
+
+    if linha_atual:
+        linhas.append(linha_atual)
+
+    return linhas if linhas else [""]
+
+
+def quebra_palavra_longa(pdf_canvas, palavra, largura_util, fonte, tamanho_fonte):
+    """Quebra uma palavra muito longa que não cabe em uma linha."""
+    if pdf_canvas.stringWidth(palavra, fonte, tamanho_fonte) <= largura_util:
+        return palavra
+
+    partes = []
+    parte_atual = ""
+
+    for char in palavra:
+        teste_parte = parte_atual + char
+        if pdf_canvas.stringWidth(teste_parte, fonte, tamanho_fonte) <= largura_util:
+            parte_atual = teste_parte
+        else:
+            if parte_atual:
+                partes.append(parte_atual)
+                parte_atual = char
+            else:
+                return trunca_com_elipses(pdf_canvas, palavra, largura_util, fonte, tamanho_fonte)
+
+    if parte_atual:
+        partes.append(parte_atual)
+
+    return partes if len(partes) > 1 else partes[0] if partes else ""
+
+
+def trunca_com_elipses(pdf_canvas, texto, largura_util, fonte, tamanho_fonte):
+    """Trunca texto adicionando elipses (...) quando necessário."""
+    if pdf_canvas.stringWidth(texto, fonte, tamanho_fonte) <= largura_util:
+        return texto
+
+    elipses = "..."
+    largura_elipses = pdf_canvas.stringWidth(elipses, fonte, tamanho_fonte)
+    largura_disponivel = largura_util - largura_elipses
+
+    if largura_disponivel <= 0:
+        return elipses
+
+    texto_truncado = ""
+    for char in texto:
+        teste_texto = texto_truncado + char
+        if pdf_canvas.stringWidth(teste_texto, fonte, tamanho_fonte) <= largura_disponivel:
+            texto_truncado = teste_texto
+        else:
+            break
+
+    return texto_truncado + elipses if texto_truncado else elipses
+
+
+def desenha_texto_celula(pdf_canvas, texto, x, y, largura_celula, altura_celula,
+                         fonte="Helvetica", tamanho_fonte=10, alinhamento="esquerda",
+                         padding=8, cor_texto=(0, 0, 0)):
+    """Desenha texto em uma célula respeitando rigorosamente os limites."""
+    if not texto or str(texto).strip() == "":
+        return 0
+
+    pdf_canvas.setFont(fonte, tamanho_fonte)
+    pdf_canvas.setFillColorRGB(*cor_texto)
+
+    linhas = quebra_texto_melhorada(pdf_canvas, str(texto), largura_celula, fonte, tamanho_fonte, padding)
+
+    espacamento_linha = tamanho_fonte + 2
+    altura_total_texto = len(linhas) * espacamento_linha
+
+    altura_util = altura_celula - (padding * 2)
+    if altura_total_texto > altura_util:
+        max_linhas = max(1, int(altura_util // espacamento_linha))
+        linhas = linhas[:max_linhas]
+        if len(linhas) > 0 and max_linhas < len(
+                quebra_texto_melhorada(pdf_canvas, str(texto), largura_celula, fonte, tamanho_fonte, padding)):
+            ultima_linha = linhas[-1]
+            linhas[-1] = trunca_com_elipses(pdf_canvas, ultima_linha, largura_celula - (padding * 2), fonte,
+                                            tamanho_fonte)
+
+    y_inicial = y - padding - (altura_celula - altura_total_texto) // 2
+
+    for i, linha in enumerate(linhas):
+        y_linha = y_inicial - (i * espacamento_linha)
+
+        if alinhamento == "centro":
+            largura_linha = pdf_canvas.stringWidth(linha, fonte, tamanho_fonte)
+            x_linha = x + (largura_celula - largura_linha) // 2
+        elif alinhamento == "direita":
+            largura_linha = pdf_canvas.stringWidth(linha, fonte, tamanho_fonte)
+            x_linha = x + largura_celula - largura_linha - padding
+        else:  # esquerda
+            x_linha = x + padding
+
+        x_linha = max(x + padding, min(x_linha, x + largura_celula - padding))
+        pdf_canvas.drawString(x_linha, y_linha, linha)
+
+    return len(linhas)
+
+
+def formata_numero_monetario(valor, largura_celula, pdf_canvas, fonte="Helvetica", tamanho_fonte=10):
+    """Formata valores monetários de forma consistente e que caiba na célula."""
+    try:
+        valor_num = float(valor) if not isinstance(valor, (int, float)) else valor
+        valor_formatado = f"R$ {valor_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        largura_util = largura_celula - 16
+        if pdf_canvas.stringWidth(valor_formatado, fonte, tamanho_fonte) <= largura_util:
+            return valor_formatado
+
+        formatos_alternativos = [
+            f"R${valor_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+            f"{valor_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+            f"{valor_num:,.0f}".replace(",", "X").replace(".", ",").replace("X", "."),
+        ]
+
+        for formato in formatos_alternativos:
+            if pdf_canvas.stringWidth(formato, fonte, tamanho_fonte) <= largura_util:
+                return formato
+
+        return trunca_com_elipses(pdf_canvas, valor_formatado, largura_util, fonte, tamanho_fonte)
+
+    except (ValueError, TypeError):
+        return str(valor)
+
+
+def formata_numero_quantidade(quantidade, largura_celula, pdf_canvas, fonte="Helvetica", tamanho_fonte=10):
+    """Formata quantidades de forma consistente."""
+    try:
+        qtd_num = float(quantidade) if not isinstance(quantidade, (int, float)) else quantidade
+
+        if qtd_num == int(qtd_num):
+            qtd_formatada = str(int(qtd_num))
+        else:
+            qtd_formatada = f"{qtd_num:.2f}".replace(".", ",")
+
+        largura_util = largura_celula - 16
+        if pdf_canvas.stringWidth(qtd_formatada, fonte, tamanho_fonte) <= largura_util:
+            return qtd_formatada
+
+        return trunca_com_elipses(pdf_canvas, qtd_formatada, largura_util, fonte, tamanho_fonte)
+
+    except (ValueError, TypeError):
+        return str(quantidade)
+
+
+# ============================================================================
+# ROTA 1 CORRIGIDA: /proposta_servico/<int:proposta_id>/imprimir
+# ============================================================================
+
+@app.route('/proposta_servico/<int:proposta_id>/imprimir', methods=['GET'])
+@login_required
+def imprimir_proposta_servico(proposta_id):
+    try:
+        if not current_user.is_authenticated:
+            return redirect(url_for('login'))
+        pagina_inicial = True
+
+        user_principal_id = current_user.user_principal_id if session.get(
+            'user_type') == 'subusuario' else current_user.id
+
+        # Buscar dados
+        registro = CalculadoraPasso1Servicos.query.filter_by(id=proposta_id, user_id=user_principal_id).first_or_404()
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+
+        if not empresa:
+            flash("Configure sua empresa para gerar propostas.", "danger")
+            return redirect(url_for('listar_propostas'))
+
+        lotes = Lote.query.filter_by(proposta_servico_id=registro.id).all()
+        despesas = Despesa.query.filter(
+            (Despesa.proposta_id == registro.id) | (Despesa.proposta_servico_id == registro.id)
+        ).all()
+
+        imposto_percentual = float(empresa.imposto_venda) if empresa and empresa.imposto_venda is not None else 0.0
+        obs = request.args.get('obs', '')
+
+        # Preparar dados
+        servicos_data = []
+        despesas_data = []
+
+        for lote in lotes:
+            for servico in lote.servicos:
+                servicos_data.append({
+                    'id': servico.id,
+                    'lote_id': lote.id,
+                    'lote_nome': lote.nome,
+                    'nome': servico.nome,
+                    'unidade_medida': servico.unidade_medida,
+                    'custo_unitario': float(servico.custo_unitario),
+                    'quantidade': float(servico.quantidade),
+                    'valor_venda': float(servico.valor_venda)
+                })
+
+        for despesa in despesas:
+            despesas_data.append({
+                'id': despesa.id,
+                'nome': despesa.nome,
+                'valor': float(despesa.valor)
+            })
+
+        # Configuração do PDF
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        MARGIN_X = 50
+        MARGIN_Y = 50
+        CONTENT_WIDTH = width - 2 * MARGIN_X
+        y = height - MARGIN_Y
+
+        def verifica_espaco(altura_necessaria):
+            nonlocal y, pagina_inicial
+            if y - altura_necessaria < MARGIN_Y:
+                pdf.showPage()
+                desenha_marca_dagua()
+                pagina_inicial = False
+                y = height - MARGIN_Y
+
+        def desenha_marca_dagua():
+            if empresa.logo:
+                try:
+                    pdf.saveState()
+                    pdf.setFillAlpha(0.1)
+                    logo = ImageReader(empresa.logo)
+                    pdf.drawImage(logo, width / 4, height / 3, width=300, height=150, mask='auto')
+                    pdf.restoreState()
+                except Exception as e:
+                    app.logger.error(f"Erro ao carregar marca d'água: {e}")
+
+        def desenha_cabecalho():
+            nonlocal y
+            y = height - MARGIN_Y
+            pdf.setFont("Helvetica", 10)
+
+            # Logo
+            logo_width = 120
+            logo_height = 60
+            logo_x = (width - logo_width) / 2
+
+            if empresa.logo:
+                try:
+                    logo = ImageReader(empresa.logo)
+                    pdf.drawImage(logo, logo_x, y - logo_height, width=logo_width, height=logo_height, mask='auto')
+                except Exception as e:
+                    app.logger.error(f"Erro ao carregar a logo: {e}")
+
+            y -= logo_height + 30
+
+            # Título
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.drawCentredString(width / 2, y, "PROPOSTA DE SERVIÇOS")
+            y -= 30
+
+            # Informações da empresa
+            from reportlab.platypus import Paragraph
+            from reportlab.lib.styles import ParagraphStyle
+
+            max_width = CONTENT_WIDTH - 20
+            style = ParagraphStyle('normal', fontName="Helvetica", fontSize=10, leading=12)
+
+            info_empresa = [
+                f"Razão Social: {empresa.razao_social}",
+                f"CNPJ: {empresa.cnpj}",
+                f"Endereço: {empresa.endereco}",
+                f"Telefone: {empresa.telefone if empresa.telefone else 'Não informado'}",
+                f"E-mail: {empresa.email if empresa.email else 'Não informado'}"
+            ]
+
+            total_height = 10
+            for linha in info_empresa:
+                p = Paragraph(linha, style)
+                w, h = p.wrap(max_width, 0)
+                total_height += h + 5
+            total_height += 10
+
+            y -= total_height
+            pdf.rect(MARGIN_X, y, CONTENT_WIDTH, total_height, stroke=1, fill=0)
+
+            linha_y = y + total_height - 15
+            for linha in info_empresa:
+                p = Paragraph(linha, style)
+                w, h = p.wrap(max_width, 0)
+                p.drawOn(pdf, MARGIN_X + 10, linha_y - h)
+                linha_y -= h + 5
+
+            y -= 30
+            pdf.setFont("Helvetica-Bold", 12)
+            # --- Dados Bancários (NOVO) ---
+            # Só imprime se houver pelo menos um campo preenchido
+            if empresa and any([empresa.banco, getattr(empresa, "agencia", None), getattr(empresa, "conta", None),
+                                getattr(empresa, "pix", None)]):
+                verifica_espaco(90)  # garante espaço ou quebra de página
+                pdf.setFont("Helvetica-Bold", 12)
+                pdf.drawString(MARGIN_X, y, "Dados Bancários:")
+                y -= 15
+
+                pdf.setFont("Helvetica", 10)
+                if getattr(empresa, "banco", None):
+                    pdf.drawString(MARGIN_X + 10, y, f"Banco: {empresa.banco}")
+                    y -= 15
+                if getattr(empresa, "agencia", None):
+                    pdf.drawString(MARGIN_X + 10, y, f"Agência: {empresa.agencia}")
+                    y -= 15
+                if getattr(empresa, "conta", None):
+                    pdf.drawString(MARGIN_X + 10, y, f"Conta: {empresa.conta}")
+                    y -= 15
+                if getattr(empresa, "pix", None):
+                    pdf.drawString(MARGIN_X + 10, y, f"PIX: {empresa.pix}")
+                    y -= 20  # espacinho depois do bloco
+
+            # Dados da proposta
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Detalhes da Proposta:")
+            y -= 15
+            pdf.setFont("Helvetica", 10)
+
+            dados_proposta = [
+                f"Proposta ID: {registro.id}",
+                f"Órgão Vinculado: {registro.razao_social}",
+                f"Número do Processo: {registro.numero_processo}",
+                f"Local de Entrega: {registro.local_execucao}",
+                f"Prazo de Execução: {registro.prazo_execucao} dias",
+                f"Validade da Proposta: {registro.validade_proposta} dias"
+            ]
+
+            for linha in dados_proposta:
+                pdf.drawString(MARGIN_X + 10, y, linha)
+                y -= 15
+
+            y -= 20
+
+        def desenha_tabela_corrigida():
+            """Desenha a tabela de serviços com controle rigoroso de overflow."""
+            nonlocal y
+            pdf.setFont("Helvetica", 10)
+
+            largura_total = width - 2 * MARGIN_X
+            largura_coluna = [
+                largura_total * 0.40,  # Serviço
+                largura_total * 0.10,  # Qtd
+                largura_total * 0.10,  # Unid.
+                largura_total * 0.20,  # Valor Unit. (R$)
+                largura_total * 0.20,  # Total (R$)
+            ]
+
+            colunas = [
+                {"titulo": "Serviço", "x": MARGIN_X, "largura": largura_coluna[0], "alinhamento": "esquerda"},
+                {"titulo": "Qtd", "x": MARGIN_X + largura_coluna[0], "largura": largura_coluna[1],
+                 "alinhamento": "centro"},
+                {"titulo": "Unid.", "x": MARGIN_X + sum(largura_coluna[:2]), "largura": largura_coluna[2],
+                 "alinhamento": "centro"},
+                {"titulo": "Valor Unit. (R$)", "x": MARGIN_X + sum(largura_coluna[:3]), "largura": largura_coluna[3],
+                 "alinhamento": "direita"},
+                {"titulo": "Total (R$)", "x": MARGIN_X + sum(largura_coluna[:4]), "largura": largura_coluna[4],
+                 "alinhamento": "direita"},
+            ]
+
+            def desenha_cabecalho_tabela():
+                nonlocal y
+                verifica_espaco(35)
+                pdf.setFont("Helvetica-Bold", 10)
+                pdf.setFillColorRGB(0.85, 0.85, 0.85)
+
+                altura_cabecalho = 35
+                pdf.rect(MARGIN_X, y - altura_cabecalho, largura_total, altura_cabecalho, fill=1)
+                pdf.setFillColorRGB(0, 0, 0)
+
+                # Desenha títulos com controle de overflow
+                for coluna in colunas:
+                    desenha_texto_celula(
+                        pdf,
+                        coluna["titulo"],
+                        coluna["x"],
+                        y,
+                        coluna["largura"],
+                        altura_cabecalho,
+                        fonte="Helvetica-Bold",
+                        tamanho_fonte=10,
+                        alinhamento="centro",
+                        padding=5
+                    )
+
+                # Bordas
+                x_atual = MARGIN_X
+                for coluna in colunas:
+                    pdf.line(x_atual, y, x_atual, y - altura_cabecalho)
+                    x_atual += coluna["largura"]
+
+                pdf.line(MARGIN_X + largura_total, y, MARGIN_X + largura_total, y - altura_cabecalho)
+                pdf.line(MARGIN_X, y - altura_cabecalho, MARGIN_X + largura_total, y - altura_cabecalho)
+
+                pdf.setFont("Helvetica", 10)
+                y -= altura_cabecalho
+                return y
+
+            # Agrupar serviços por lote
+            lotes_agrupados = {}
+            for servico in servicos_data:
+                if servico["lote_nome"] not in lotes_agrupados:
+                    lotes_agrupados[servico["lote_nome"]] = []
+                lotes_agrupados[servico["lote_nome"]].append(servico)
+
+            for lote_nome, servicos in lotes_agrupados.items():
+                # Título do lote
+                verifica_espaco(30)
+                pdf.setFont("Helvetica-Bold", 12)
+                pdf.drawString(MARGIN_X, y, f"Lote: {lote_nome}")
+                y -= 20
+
+                # Cabeçalho da tabela
+                y = desenha_cabecalho_tabela()
+
+                total_qtd_lote = 0
+                total_valor_lote = 0
+
+                for servico in servicos:
+                    total_por_servico = servico["quantidade"] * servico["valor_venda"]
+                    total_qtd_lote += servico["quantidade"]
+                    total_valor_lote += total_por_servico
+
+                    # Prepara conteúdo com formatação adequada
+                    conteudo_colunas = [
+                        servico["nome"],
+                        formata_numero_quantidade(servico["quantidade"], colunas[1]["largura"], pdf),
+                        servico["unidade_medida"],
+                        formata_numero_monetario(servico["valor_venda"], colunas[3]["largura"], pdf),
+                        formata_numero_monetario(total_por_servico, colunas[4]["largura"], pdf),
+                    ]
+
+                    # Calcula altura necessária
+                    max_linhas = 1
+                    for i, conteudo in enumerate(conteudo_colunas):
+                        linhas_necessarias = len(quebra_texto_melhorada(
+                            pdf, conteudo, colunas[i]["largura"], "Helvetica", 10, 8
+                        ))
+                        max_linhas = max(max_linhas, linhas_necessarias)
+
+                    altura_linha = max_linhas * 14 + 10
+
+                    # Verifica espaço
+                    if y - altura_linha < MARGIN_Y:
+                        pdf.showPage()
+                        y = height - MARGIN_Y
+                        desenha_marca_dagua()
+                        y = desenha_cabecalho_tabela()
+
+                    # Desenha linha
+                    pdf.rect(MARGIN_X, y - altura_linha, largura_total, altura_linha, fill=0)
+
+                    # Desenha conteúdo de cada célula
+                    for i, (conteudo, coluna) in enumerate(zip(conteudo_colunas, colunas)):
+                        desenha_texto_celula(
+                            pdf,
+                            conteudo,
+                            coluna["x"],
+                            y,
+                            coluna["largura"],
+                            altura_linha,
+                            fonte="Helvetica",
+                            tamanho_fonte=10,
+                            alinhamento=coluna["alinhamento"],
+                            padding=8
+                        )
+
+                    # Bordas
+                    x_atual = MARGIN_X
+                    for coluna in colunas:
+                        pdf.line(x_atual, y, x_atual, y - altura_linha)
+                        x_atual += coluna["largura"]
+
+                    pdf.line(MARGIN_X + largura_total, y, MARGIN_X + largura_total, y - altura_linha)
+                    pdf.line(MARGIN_X, y - altura_linha, MARGIN_X + largura_total, y - altura_linha)
+
+                    y -= altura_linha
+
+                # Totalização do lote
+                pdf.setFont("Helvetica-Bold", 10)
+                pdf.setFillColorRGB(0.85, 0.85, 0.85)
+                altura_totalizacao = 25
+                pdf.rect(MARGIN_X, y - altura_totalizacao, largura_total, altura_totalizacao, fill=1)
+                pdf.setFillColorRGB(0, 0, 0)
+
+                desenha_texto_celula(
+                    pdf, "Total do Lote:", colunas[0]["x"], y, colunas[0]["largura"],
+                    altura_totalizacao, "Helvetica-Bold", 10, "esquerda", 5
+                )
+
+                desenha_texto_celula(
+                    pdf, formata_numero_quantidade(total_qtd_lote, colunas[1]["largura"], pdf),
+                    colunas[1]["x"], y, colunas[1]["largura"], altura_totalizacao,
+                    "Helvetica-Bold", 10, "centro", 5
+                )
+
+                desenha_texto_celula(
+                    pdf, formata_numero_monetario(total_valor_lote, colunas[4]["largura"], pdf),
+                    colunas[4]["x"], y, colunas[4]["largura"], altura_totalizacao,
+                    "Helvetica-Bold", 10, "direita", 5
+                )
+
+                y -= altura_totalizacao + 30
+
+        # Funções auxiliares existentes (resumo, observação, etc.)
+        def quebra_texto_justificado(texto, largura_maxima):
+            palavras = texto.split()
+            linhas = []
+            linha_atual = ""
+
+            for palavra in palavras:
+                if pdf.stringWidth(linha_atual + palavra, "Helvetica", 10) <= largura_maxima:
+                    linha_atual += palavra + " "
+                else:
+                    linhas.append(linha_atual.strip())
+                    linha_atual = palavra + " "
+
+            if linha_atual:
+                linhas.append(linha_atual.strip())
+
+            return linhas
+
+        def desenha_resumo_total():
+            nonlocal y
+            verifica_espaco(50)
+
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Resumo Geral dos Lotes:")
+            y -= 20
+
+            pdf.setFont("Helvetica", 10)
+
+            total_qtd_geral = sum(s['quantidade'] for s in servicos_data)
+            total_valor_geral = sum(s['valor_venda'] * s['quantidade'] for s in servicos_data)
+
+            pdf.drawString(MARGIN_X, y, f"Total de Quantidade: {total_qtd_geral}")
+            y -= 15
+            pdf.drawString(MARGIN_X, y,
+                           f"Total de Valor (R$): R$ {total_valor_geral:,.2f}".replace(",", "X").replace(".",
+                                                                                                         ",").replace(
+                               "X", "."))
+            y -= 15
+
+            # Conversão para extenso (função existente)
+            total_valor_geral = float(total_valor_geral)
+
+            def converte_numeros(n):
+                unidade = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"]
+                dezena = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta",
+                          "noventa"]
+                especiais = ["", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito",
+                             "dezenove"]
+                centena = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos",
+                           "setecentos", "oitocentos", "novecentos"]
+
+                def numero_pequeno(n):
+                    if n == 100:
+                        return "cem"
+                    elif n < 10:
+                        return unidade[n]
+                    elif 11 <= n <= 19:
+                        return especiais[n - 10]
+                    elif n < 100:
+                        return dezena[n // 10] + (" e " + unidade[n % 10] if n % 10 != 0 else "")
+                    elif n < 1000:
+                        return centena[n // 100] + (" e " + numero_pequeno(n % 100) if n % 100 != 0 else "")
+                    return ""
+
+                def numero_maior(n):
+                    grupos = [
+                        (10 ** 12, "trilhão", "trilhões"),
+                        (10 ** 9, "bilhão", "bilhões"),
+                        (10 ** 6, "milhão", "milhões"),
+                        (10 ** 3, "mil", "mil")
+                    ]
+                    resultado = []
+                    for valor, singular, plural in grupos:
+                        if n >= valor:
+                            quantia = n // valor
+                            n = n % valor
+                            nome = singular if quantia == 1 else plural
+                            resultado.append(numero_pequeno(quantia) + " " + nome)
+                    if n > 0:
+                        resultado.append(numero_pequeno(n))
+                    return " e ".join(resultado)
+
+                return numero_maior(n) if n >= 1000 else numero_pequeno(n)
+
+            def numero_por_extenso(valor):
+                partes = f"{valor:.2f}".split(".")
+                reais = int(partes[0])
+                centavos = int(partes[1])
+
+                extenso = converte_numeros(reais) + " reais"
+                if centavos > 0:
+                    extenso += " e " + converte_numeros(centavos) + " centavos"
+
+                return extenso.capitalize()
+
+            valor_por_extenso = numero_por_extenso(total_valor_geral)
+            if total_valor_geral == 0:
+                valor_por_extenso = "Zero reais"
+
+            pdf.drawString(MARGIN_X, y, f"Valor Total por Extenso: {valor_por_extenso}")
+            y -= 30
+
+        def desenha_observacao():
+            nonlocal y
+            verifica_espaco(50)
+
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Observações:")
+            y -= 20
+
+            pdf.setFont("Helvetica", 10)
+            obs_texto = quebra_texto_melhorada(pdf, obs, CONTENT_WIDTH - 20, "Helvetica", 10, 10)
+
+            for linha in obs_texto:
+                verifica_espaco(15)
+                pdf.drawString(MARGIN_X + 10, y, linha)
+                y -= 15
+
+            y -= 15
+
+        def desenha_declaracoes():
+            nonlocal y
+            verifica_espaco(30)
+
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Declarações:")
+            y -= 20
+
+            pdf.setFont("Helvetica", 10)
+
+            declaracoes = [
+                ("Declaração de Cumprimento dos Requisitos de Habilitação",
+                 "Declaro, sob as penas da lei, que a empresa cumpre todos os requisitos de habilitação exigidos no edital, conforme artigo 67 da Lei nº 14.133/2021."),
+                ("Declaração de Elaboração Independente de Proposta",
+                 "Declaro, para os devidos fins, que a presente proposta foi elaborada de forma independente, sem qualquer tipo de conluio ou influência indevida, em conformidade com a IN nº 73/2020 da CGU."),
+                ("Declaração de Atendimento às Condições do Edital",
+                 "Declaro que a empresa leu, compreendeu e aceita integralmente todas as condições estabelecidas no edital da presente licitação."),
+                ("Declaração de Responsabilidade Técnica pela Execução do Serviço",
+                 "Declaro que a empresa possui profissionais qualificados para a execução dos serviços contratados e se responsabiliza integralmente pela sua execução e qualidade."),
+                ("Declaração de Atendimento à Lei Geral de Proteção de Dados (LGPD)",
+                 "Declaro que a empresa cumpre todas as disposições da Lei nº 13.709/2018 (LGPD) e se compromete a proteger os dados pessoais tratados no âmbito deste contrato."),
+                ("Declaração de Que Não Incorre em Impedimentos Relativos ao Pregão Eletrônico",
+                 "Declaro que a empresa não foi punida com sanção impeditiva de participação em licitações e que atende a todas as exigências do edital do pregão eletrônico."),
+            ]
+
+            for titulo, texto in declaracoes:
+                verifica_espaco(50)
+                pdf.setFont("Helvetica-Bold", 11)
+                pdf.drawString(MARGIN_X, y, titulo)
+                y -= 15
+
+                pdf.setFont("Helvetica", 10)
+                linhas_texto = quebra_texto_justificado(texto, CONTENT_WIDTH)
+
+                for linha in linhas_texto:
+                    verifica_espaco(15)
+                    pdf.drawString(MARGIN_X, y, linha)
+                    y -= 15
+
+                y -= 10
+
+        def desenha_data_assinatura():
+            nonlocal y
+            verifica_espaco(60)
+
+            pdf.setFont("Helvetica", 12)
+            pdf.drawString(MARGIN_X, y, f"Data: {datetime.now().strftime('%d/%m/%Y')}")
+            y -= 30
+
+            assinatura_x = width / 2 - 100
+            assinatura_largura = 200
+
+            pdf.line(assinatura_x, y, assinatura_x + assinatura_largura, y)
+            y -= 15
+
+            if empresa and empresa.nome_socio:
+                pdf.setFont("Helvetica-Bold", 12)
+                pdf.drawCentredString(width / 2, y, empresa.nome_socio)
+                y -= 15
+                pdf.setFont("Helvetica", 12)
+                pdf.drawCentredString(width / 2, y, f"CPF: {empresa.cpf_socio}")
+                y -= 30
+
+        # Execução
+        desenha_marca_dagua()
+        if pagina_inicial:
+            desenha_cabecalho()
+        desenha_tabela_corrigida()  # ← FUNÇÃO CORRIGIDA
+        desenha_resumo_total()
+        desenha_observacao()
+        desenha_declaracoes()
+        desenha_data_assinatura()
+
+        pdf.save()
+        buffer.seek(0)
+
+        return send_file(buffer, as_attachment=True, download_name=f"Proposta_Servico_{proposta_id}.pdf",
+                         mimetype='application/pdf')
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF: {e}")
+        return redirect(url_for('simulacao'))
+
+
+@app.route('/proposta_servico/<int:proposta_id>/relatorio', methods=['GET'])
+@login_required
+def relatorio_custos_servico(proposta_id):
+    try:
+        if not current_user.is_authenticated:
+            return redirect(url_for('login'))
+        pagina_inicial = True  # Controla se estamos na primeira página
+
+        user_principal_id = current_user.user_principal_id if session.get(
+            'user_type') == 'subusuario' else current_user.id
+
+        # Buscar a proposta de serviço
+        registro = CalculadoraPasso1Servicos.query.filter_by(id=proposta_id, user_id=user_principal_id).first_or_404()
+
+        # Buscar empresa e validar se existe
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        if not empresa:
+            flash("Configure sua empresa para gerar propostas.", "danger")
+            return redirect(url_for('listar_propostas'))
+
+        # Buscar lotes, serviços e despesas
+        lotes = Lote.query.filter_by(proposta_servico_id=registro.id).all()
+        despesas = Despesa.query.filter(
+            (Despesa.proposta_id == registro.id) | (Despesa.proposta_servico_id == registro.id)
+        ).all()
+
+        # Buscar impostos da empresa
+        imposto_percentual = float(empresa.imposto_venda) if empresa and empresa.imposto_venda is not None else 0.0
+
+        # Captura a observação
+        obs = request.args.get('obs', '')
+
+        # Dados da proposta
+        lotes_data = []
+        servicos_data = []
+        despesas_data = []
+
+        for lote in lotes:
+            lotes_data.append({'id': lote.id, 'nome': lote.nome})
+            for servico in lote.servicos:
+                servicos_data.append({
+                    'id': servico.id,
+                    'lote_id': lote.id,
+                    'lote_nome': lote.nome,
+                    'nome': servico.nome,
+                    'unidade_medida': servico.unidade_medida,
+                    'custo_unitario': float(servico.custo_unitario),
+                    'quantidade': float(servico.quantidade),
+                    'valor_venda': float(servico.valor_venda)
+                })
+
+        for despesa in despesas:
+            despesas_data.append({
+                'id': despesa.id,
+                'nome': despesa.nome,
+                'valor': float(despesa.valor)
+            })
+
+        # Cálculo dos totais
+        total_custo = sum(s['custo_unitario'] * s['quantidade'] for s in servicos_data)
+        total_venda = sum(s['valor_venda'] * s['quantidade'] for s in servicos_data)
+        total_despesas = sum(d['valor'] for d in despesas_data)
+        imposto_total = total_venda * (imposto_percentual / 100)
+        lucro_total = total_venda - total_custo - total_despesas - imposto_total
+
+        # Configuração do PDF
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        MARGIN_X = 50  # Margem lateral fixa
+        MARGIN_Y = 50  # Margem superior/inferior fixa
+        CONTENT_WIDTH = width - 2 * MARGIN_X  # Largura máxima do conteúdo
+        y = height - MARGIN_Y  # Posição inicial
+
+        def quebra_texto(texto, largura_maxima):
+            palavras = texto.split()
+            linhas = []
+            linha_atual = ""
+
+            for palavra in palavras:
+                if pdf.stringWidth(linha_atual + palavra, "Helvetica", 11) < largura_maxima:
+                    linha_atual += palavra + " "
+                else:
+                    linhas.append(linha_atual.strip())
+                    linha_atual = palavra + " "
+
+            if linha_atual:
+                linhas.append(linha_atual.strip())
+
+            return linhas
+
+        def verifica_espaco(altura_necessaria):
+            """Verifica se há espaço suficiente, senão cria nova página."""
+            nonlocal y, pagina_inicial
+            if y - altura_necessaria < MARGIN_Y:
+                pdf.showPage()  # Nova página
+                desenha_marca_dagua()  # ✅ Apenas a marca d'água será redesenhada
+                pagina_inicial = False  # Agora estamos em uma nova página
+                y = height - MARGIN_Y
+
+        def desenha_marca_dagua():
+            """Adiciona marca d'água da empresa"""
+            if empresa.logo:
+                try:
+                    pdf.saveState()
+                    pdf.setFillAlpha(0.1)
+                    logo = ImageReader(empresa.logo)
+                    pdf.drawImage(logo, width / 4, height / 3, width=300, height=150, mask='auto')
+                    pdf.restoreState()
+                except Exception as e:
+                    app.logger.error(f"Erro ao carregar marca d'água: {e}")
+
+        from reportlab.platypus import Paragraph
+        from reportlab.lib.styles import ParagraphStyle
+
+        def desenha_cabecalho():
+            """Desenha o cabeçalho sem sobreposição e com espaçamento correto"""
+            nonlocal y
+
+            # 🔹 Reserva espaço adequado antes do cabeçalho para evitar sobreposição
+            y = height - MARGIN_Y
+
+            pdf.setFont("Helvetica", 10)
+
+            # 🔹 Ajuste da Logo
+            logo_width = 120
+            logo_height = 60
+            logo_x = (width - logo_width) / 2  # Centraliza a logo
+
+            if empresa.logo:
+                try:
+                    logo = ImageReader(empresa.logo)
+                    pdf.drawImage(logo, logo_x, y - logo_height, width=logo_width, height=logo_height, mask='auto')
+                except Exception as e:
+                    app.logger.error(f"Erro ao carregar a logo: {e}")
+
+            y -= logo_height + 30  # Espaço abaixo da logo
+
+            # 🔹 Título centralizado
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.drawCentredString(width / 2, y, "COMPOSIÇÃO DE CUSTO")
+            y -= 30
+
+            # 🔹 Ajustando a largura máxima do texto dentro do box
+            max_width = CONTENT_WIDTH - 20  # Margens internas para evitar corte
+            style = ParagraphStyle('normal', fontName="Helvetica", fontSize=10, leading=12)
+
+            info_empresa = [
+                f"Razão Social: {empresa.razao_social}",
+                f"CNPJ: {empresa.cnpj}",
+                f"Endereço: {empresa.endereco}",
+                f"Telefone: {empresa.telefone if empresa.telefone else 'Não informado'}",
+                f"E-mail: {empresa.email if empresa.email else 'Não informado'}"
+            ]
+
+            # 🔹 Calculando a altura total necessária para o box
+            total_height = 10  # Margem superior do box
+            paragraph_heights = []  # Guardar alturas individuais
+
+            for linha in info_empresa:
+                p = Paragraph(linha, style)
+                w, h = p.wrap(max_width, 0)  # Calcula a largura e altura do parágrafo
+                paragraph_heights.append(h)
+                total_height += h + 5  # Soma a altura + espaçamento entre linhas
+
+            total_height += 10  # Margem inferior do box
+
+            # 🔹 Ajustando y para que o box fique na posição correta
+            y -= total_height  # Ajustamos para que o box envolva todo o conteúdo
+
+            # 🔹 Desenhando o box com a altura ajustada
+            pdf.rect(MARGIN_X, y, CONTENT_WIDTH, total_height, stroke=1, fill=0)
+
+            # 🔹 Escrevendo o conteúdo dentro do box
+            linha_y = y + total_height - 15  # Começa de cima para baixo
+
+            for i, linha in enumerate(info_empresa):
+                p = Paragraph(linha, style)
+                w, h = p.wrap(max_width, 0)
+                p.drawOn(pdf, MARGIN_X + 10, linha_y - h)
+                linha_y -= h + 5
+
+            y -= 20  # Espaço após o box
+
+            # 🔹 Adicionar Dados da Proposta
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "REFERENCIA DO RELATORIO")
+            y -= 15
+            pdf.setFont("Helvetica", 10)
+
+            dados_proposta = [
+                f"Proposta ID: {registro.id}",
+                f"Órgão Vinculado: {registro.razao_social}",
+                f"Número do Processo: {registro.numero_processo}",
+                f"Local de Entrega: {registro.local_execucao}",
+                f"Validade da Proposta: {registro.validade_proposta} dias"
+            ]
+
+            for linha in dados_proposta:
+                pdf.drawString(MARGIN_X + 10, y, linha)
+                y -= 15
+
+            y -= 20  # Espaço antes da próxima seção
+
+        import locale
+        locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')  # Configura para exibição correta do Real (R$)
+
+        def formatar_moeda(valor):
+            """Formata valores numéricos para o padrão BRL (R$ 16.204,00)."""
+            return "R$ {:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".")
+
+        def desenha_tabela():
+            """Desenha a tabela de serviços garantindo que as colunas respeitem as margens e os valores fiquem no formato correto."""
+            nonlocal y
+            pdf.setFont("Helvetica", 10)
+
+            largura_total = width - 2 * MARGIN_X  # Respeita as margens da A4
+
+            # 🔹 Ajuste das larguras das colunas
+            proporcoes = {
+                "Serviço": 0.24,
+                "Unid. Medida": 0.09,
+                "Qtd": 0.07,
+                "Custo Unit. (R$)": 0.11,
+                "Custo Total (R$)": 0.11,
+                "Venda Unit. (R$)": 0.11,
+                "Venda Total (R$)": 0.11,
+                "% Lucro": 0.06,
+            }
+
+            largura_coluna = {chave: largura_total * valor for chave, valor in proporcoes.items()}
+
+            colunas = []
+            x_atual = MARGIN_X
+            for titulo, largura in largura_coluna.items():
+                colunas.append({"titulo": titulo, "x": x_atual, "largura": largura})
+                x_atual += largura
+
+            def desenha_cabecalho_tabela():
+                """Desenha o cabeçalho da tabela corretamente formatado e dentro das margens."""
+                nonlocal y
+                verifica_espaco(50)
+
+                pdf.setFont("Helvetica-Bold", 10)
+                pdf.setFillColorRGB(0.85, 0.85, 0.85)
+
+                altura_linhas_titulo = max(
+                    len(quebra_texto(coluna["titulo"], coluna["largura"] - 10)) for coluna in colunas
+                )
+                altura_cabecalho = 18 + (altura_linhas_titulo * 12)
+
+                pdf.rect(MARGIN_X, y - altura_cabecalho, largura_total, altura_cabecalho, fill=1)
+                pdf.setFillColorRGB(0, 0, 0)
+
+                for coluna in colunas:
+                    texto_quebrado = quebra_texto(coluna["titulo"], coluna["largura"] - 10)
+                    y_texto = y - (altura_cabecalho / 2) + ((len(texto_quebrado) - 1) * 6)
+
+                    for linha in texto_quebrado:
+                        pdf.drawString(coluna["x"] + 5, y_texto, linha)
+                        y_texto -= 12
+
+                pdf.setFont("Helvetica", 10)
+                return y - altura_cabecalho
+
+            def quebra_texto(texto, largura_maxima):
+                """Quebra o texto dentro da célula para evitar que ultrapasse os limites da tabela."""
+                palavras = texto.split()
+                linhas = []
+                linha_atual = ""
+
+                for palavra in palavras:
+                    if pdf.stringWidth(linha_atual + palavra + " ", "Helvetica", 10) <= largura_maxima:
+                        linha_atual += palavra + " "
+                    else:
+                        linhas.append(linha_atual.strip())
+                        linha_atual = palavra + " "
+
+                if linha_atual:
+                    linhas.append(linha_atual.strip())
+
+                return linhas
+
+            lotes_agrupados = {}
+            for servico in servicos_data:
+                if servico["lote_nome"] not in lotes_agrupados:
+                    lotes_agrupados[servico["lote_nome"]] = []
+                lotes_agrupados[servico["lote_nome"]].append(servico)
+
+            for lote_nome, servicos in lotes_agrupados.items():
+                verifica_espaco(100)  # Verifica espaço ANTES de desenhar o título e cabeçalho
+                if y - 100 < MARGIN_Y:
+                    pdf.showPage()
+                    desenha_marca_dagua()
+                    pagina_inicial = False
+                    y = height - MARGIN_Y
+
+                pdf.setFont("Helvetica-Bold", 12)
+                pdf.drawString(MARGIN_X, y, f"Lote: {lote_nome}")
+                y -= 25
+
+                y = desenha_cabecalho_tabela()
+
+                total_qtd_lote = 0
+                total_valor_lote = 0
+
+                for servico in servicos:
+                    total_por_servico = servico["quantidade"] * servico["valor_venda"]
+                    custo_total = servico["quantidade"] * servico["custo_unitario"]
+                    total_qtd_lote += servico["quantidade"]
+                    total_valor_lote += total_por_servico
+
+                    lucro_percentual = ((servico["valor_venda"] - servico["custo_unitario"]) / servico[
+                        "custo_unitario"]) * 100 if servico["custo_unitario"] > 0 else 0
+
+                    colunas_conteudo = [
+                        quebra_texto(servico["nome"], colunas[0]["largura"] - 10),
+                        quebra_texto(servico["unidade_medida"], colunas[1]["largura"] - 10),
+                        quebra_texto(str(servico["quantidade"]), colunas[2]["largura"] - 10),
+                        quebra_texto(formatar_moeda(servico["custo_unitario"]), colunas[3]["largura"] - 10),
+                        quebra_texto(formatar_moeda(custo_total), colunas[4]["largura"] - 10),
+                        quebra_texto(formatar_moeda(servico["valor_venda"]), colunas[5]["largura"] - 10),
+                        quebra_texto(formatar_moeda(total_por_servico), colunas[6]["largura"] - 10),
+                        quebra_texto(f"{lucro_percentual:.2f}%", colunas[7]["largura"] - 10),
+                    ]
+
+                    altura_linha = max(len(conteudo) for conteudo in colunas_conteudo) * 14 + 8
+
+                    if y - altura_linha < MARGIN_Y:
+                        pdf.showPage()
+                        desenha_marca_dagua()
+                        pagina_inicial = False
+                        y = height - MARGIN_Y
+                        y = desenha_cabecalho_tabela()
+                        y -= 20
+
+                    pdf.rect(MARGIN_X, y - altura_linha, largura_total, altura_linha, fill=0)
+
+                    x_atual = MARGIN_X
+                    for i, coluna in enumerate(colunas_conteudo):
+                        y_texto = y - 10
+                        for linha in coluna:
+                            pdf.drawString(x_atual + 5, y_texto, linha)
+                            y_texto -= 14
+                        x_atual += colunas[i]["largura"]
+
+                    x_atual = MARGIN_X
+                    for coluna in colunas:
+                        pdf.line(x_atual, y, x_atual, y - altura_linha)
+                        x_atual += coluna["largura"]
+
+                    pdf.line(MARGIN_X + largura_total, y, MARGIN_X + largura_total, y - altura_linha)
+                    pdf.line(MARGIN_X, y - altura_linha, MARGIN_X + largura_total, y - altura_linha)
+
+                    y -= altura_linha
+
+                pdf.setFont("Helvetica-Bold", 10)
+                pdf.setFillColorRGB(0.85, 0.85, 0.85)
+                altura_totalizacao = 25
+                pdf.rect(MARGIN_X, y - altura_totalizacao, largura_total, altura_totalizacao, fill=1)
+                pdf.setFillColorRGB(0, 0, 0)
+
+                pdf.drawString(colunas[0]["x"] + 5, y - 15, "Total do Lote:")
+                pdf.drawString(colunas[2]["x"] + 5, y - 15, str(total_qtd_lote))
+                pdf.drawString(colunas[6]["x"] + 5, y - 15, formatar_moeda(total_valor_lote))
+
+                y -= altura_totalizacao + 30
+
+            return y
+
+        def desenha_resumo_total():
+            """Adiciona o resumo geral dos valores e o total por extenso antes da observação"""
+            nonlocal y
+            verifica_espaco(50)  # Garante espaço para o total
+
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Resumo Geral dos Lotes:")
+            y -= 20
+
+            pdf.setFont("Helvetica", 10)
+
+            total_valor_geral = sum(
+                s['valor_venda'] * s['quantidade'] for s in servicos_data)  # 🔹 Soma total de valores
+
+            y -= 15
+            pdf.drawString(MARGIN_X, y,
+                           f"Total de Valor (R$): R$ {total_valor_geral:,.2f}".replace(",", "X").replace(".",
+                                                                                                         ",").replace(
+                               "X", "."))
+            y -= 15
+
+            # 🔹 Garantir que o valor seja um float corretamente tratado
+            total_valor_geral = float(total_valor_geral)  # Garante que seja float
+
+            # 🔹 Converte o valor total para extenso corretamente
+            def converte_numeros(n):
+                unidade = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"]
+                dezena = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta",
+                          "noventa"]
+                especiais = ["", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito",
+                             "dezenove"]
+                centena = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos",
+                           "setecentos", "oitocentos", "novecentos"]
+
+                def numero_pequeno(n):
+                    """Converte números menores que 1000"""
+                    if n == 100:
+                        return "cem"
+                    elif n < 10:
+                        return unidade[n]
+                    elif 11 <= n <= 19:
+                        return especiais[n - 10]
+                    elif n < 100:
+                        return dezena[n // 10] + (" e " + unidade[n % 10] if n % 10 != 0 else "")
+                    elif n < 1000:
+                        return centena[n // 100] + (" e " + numero_pequeno(n % 100) if n % 100 != 0 else "")
+                    return ""
+
+                def numero_maior(n):
+                    """Converte valores grandes com milhões, bilhões e trilhões"""
+                    grupos = [
+                        (10 ** 12, "trilhão", "trilhões"),
+                        (10 ** 9, "bilhão", "bilhões"),
+                        (10 ** 6, "milhão", "milhões"),
+                        (10 ** 3, "mil", "mil")
+                    ]
+                    resultado = []
+                    for valor, singular, plural in grupos:
+                        if n >= valor:
+                            quantia = n // valor
+                            n = n % valor
+                            nome = singular if quantia == 1 else plural
+                            resultado.append(numero_pequeno(quantia) + " " + nome)
+                    if n > 0:
+                        resultado.append(numero_pequeno(n))
+                    return " e ".join(resultado)
+
+                return numero_maior(n) if n >= 1000 else numero_pequeno(n)
+
+            # 🔹 Converte o valor total para extenso corretamente
+            def numero_por_extenso(valor):
+                partes = f"{valor:.2f}".split(".")  # 🔹 Força duas casas decimais e divide reais/centavos
+                reais = int(partes[0])
+                centavos = int(partes[1])
+
+                extenso = converte_numeros(reais) + " reais"
+                if centavos > 0:
+                    extenso += " e " + converte_numeros(centavos) + " centavos"
+
+                return extenso.capitalize()
+
+            # 🔹 Garante que o valor total está corretamente tratado
+            valor_por_extenso = numero_por_extenso(total_valor_geral)
+
+            # 🔹 Se o valor for `0`, substitui por "Zero reais"
+            if total_valor_geral == 0:
+                valor_por_extenso = "Zero reais"
+
+            pdf.drawString(MARGIN_X, y, f"Valor Total por Extenso: {valor_por_extenso}")
+            y -= 30  # Espaço antes da observação
+
+        def desenha_tabela_despesas(despesas_data):
+            """Desenha a tabela de despesas gerais logo após o resumo dos lotes."""
+            nonlocal y  # Garantir acesso à variável y corretamente
+
+            if not despesas_data:
+                return  # 🔹 Se não houver despesas, pula a seção
+
+            verifica_espaco(50)  # 🔹 Garante espaço antes do cabeçalho das despesas
+
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Despesas Gerais:")
+            y -= 25  # 🔹 Espaço antes da tabela
+
+            # 🔹 Define as larguras das colunas da tabela de despesas
+            largura_total = width - 2 * MARGIN_X
+            largura_coluna = {
+                "Nome": largura_total * 0.70,
+                "Valor (R$)": largura_total * 0.30
+            }
+
+            colunas_despesas = [
+                {"titulo": "Nome", "x": MARGIN_X, "largura": largura_coluna["Nome"]},
+                {"titulo": "Valor (R$)", "x": MARGIN_X + largura_coluna["Nome"],
+                 "largura": largura_coluna["Valor (R$)"]}
+            ]
+
+            def desenha_cabecalho_despesas():
+                """Desenha o cabeçalho da tabela de despesas, garantindo alinhamento correto."""
+                nonlocal y
+                altura_cabecalho = 30
+
+                pdf.setFont("Helvetica-Bold", 10)
+                pdf.setFillColorRGB(0.85, 0.85, 0.85)  # 🔹 Fundo cinza claro para cabeçalho
+                pdf.rect(MARGIN_X, y - altura_cabecalho, largura_total, altura_cabecalho, fill=1)
+                pdf.setFillColorRGB(0, 0, 0)  # 🔹 Voltar para preto
+
+                for coluna in colunas_despesas:
+                    pdf.drawString(coluna["x"] + 5, y - 18, coluna["titulo"])
+
+                # 🔹 Adicionando bordas verticais
+                for coluna in colunas_despesas:
+                    pdf.line(coluna["x"], y - altura_cabecalho, coluna["x"], y)
+
+                # 🔹 Borda final
+                pdf.line(MARGIN_X + largura_total, y - altura_cabecalho, MARGIN_X + largura_total, y)
+
+                pdf.setFont("Helvetica", 10)
+                return y - altura_cabecalho
+
+            y = desenha_cabecalho_despesas()
+
+            total_despesas = 0
+
+            for despesa in despesas_data:
+                verifica_espaco(25)  # 🔹 Garante espaço antes de desenhar a linha
+
+                total_despesas += despesa["valor"]
+
+                # 🔹 Quebra o nome da despesa caso seja muito longo
+                nome_quebrado = quebra_texto(despesa["nome"], colunas_despesas[0]["largura"] - 10)
+                valor_formatado = formatar_moeda(despesa["valor"])
+
+                altura_linha = max(len(nome_quebrado), 1) * 14 + 6
+
+                if y - altura_linha < MARGIN_Y:
+                    pdf.showPage()
+                    y = desenha_cabecalho_despesas()
+                    y -= 40  # 🔹 Mantém espaço antes de desenhar a primeira linha da nova página
+
+                # 🔹 Desenha as células corretamente
+                pdf.rect(MARGIN_X, y - altura_linha, largura_total, altura_linha, fill=0)
+
+                y_texto = y - 10
+                for linha in nome_quebrado:
+                    pdf.drawString(colunas_despesas[0]["x"] + 5, y_texto, linha)
+                    y_texto -= 14
+
+                pdf.drawString(colunas_despesas[1]["x"] + 5, y - 15, valor_formatado)
+
+                # 🔹 Adicionando bordas verticais para separar colunas
+                for coluna in colunas_despesas:
+                    pdf.line(coluna["x"], y - altura_linha, coluna["x"], y)
+
+                # 🔹 Linha horizontal inferior
+                pdf.line(MARGIN_X, y - altura_linha, MARGIN_X + largura_total, y - altura_linha)
+
+                y -= altura_linha
+
+            # 🔹 Total de Despesas no final da tabela
+            pdf.setFont("Helvetica-Bold", 10)
+            pdf.setFillColorRGB(0.85, 0.85, 0.85)  # 🔹 Fundo cinza claro para totalização
+            altura_totalizacao = 25
+            pdf.rect(MARGIN_X, y - altura_totalizacao, largura_total, altura_totalizacao, fill=1)
+            pdf.setFillColorRGB(0, 0, 0)  # 🔹 Voltar para preto
+
+            pdf.drawString(colunas_despesas[0]["x"] + 5, y - 15, "Total de Despesas:")
+            pdf.drawString(colunas_despesas[1]["x"] + 5, y - 15, formatar_moeda(total_despesas))
+
+            # 🔹 Adicionando bordas verticais para separar colunas
+            for coluna in colunas_despesas:
+                pdf.line(coluna["x"], y - altura_totalizacao, coluna["x"], y)
+
+            # 🔹 Linha horizontal inferior
+            pdf.line(MARGIN_X, y - altura_totalizacao, MARGIN_X + largura_total, y - altura_totalizacao)
+
+            y -= altura_totalizacao + 30  # 🔹 Espaço extra após a tabela de despesas
+
+        def desenha_resumo_financeiro():
+            """Desenha a tabela do resumo financeiro com custos, despesas, impostos e lucro."""
+            nonlocal y
+
+            verifica_espaco(50)  # Garante espaço antes da tabela
+
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Resumo Financeiro:")
+            y -= 25  # Espaço antes da tabela
+
+            # 🔹 Define as larguras das colunas da tabela do resumo financeiro
+            largura_total = width - 2 * MARGIN_X
+            largura_coluna = {
+                "Descrição": largura_total * 0.60,
+                "Valor (R$)": largura_total * 0.40
+            }
+
+            colunas_resumo = [
+                {"titulo": "Descrição", "x": MARGIN_X, "largura": largura_coluna["Descrição"]},
+                {"titulo": "Valor (R$)", "x": MARGIN_X + largura_coluna["Descrição"],
+                 "largura": largura_coluna["Valor (R$)"]}
+            ]
+
+            def desenha_cabecalho_resumo():
+                """Desenha o cabeçalho da tabela do resumo financeiro."""
+                nonlocal y
+                altura_cabecalho = 30
+
+                pdf.setFont("Helvetica-Bold", 10)
+                pdf.setFillColorRGB(0.85, 0.85, 0.85)  # Fundo cinza claro
+
+                pdf.rect(MARGIN_X, y - altura_cabecalho, largura_total, altura_cabecalho, fill=1)
+                pdf.setFillColorRGB(0, 0, 0)  # Voltar para preto
+
+                for coluna in colunas_resumo:
+                    pdf.drawString(coluna["x"] + 5, y - 18, coluna["titulo"])
+
+                # 🔹 Adicionando bordas verticais
+                for coluna in colunas_resumo:
+                    pdf.line(coluna["x"], y - altura_cabecalho, coluna["x"], y)
+
+                pdf.line(MARGIN_X + largura_total, y - altura_cabecalho, MARGIN_X + largura_total,
+                         y)  # Última linha vertical
+                pdf.setFont("Helvetica", 10)
+                return y - altura_cabecalho
+
+            y = desenha_cabecalho_resumo()
+
+            # 🔹 Adicionando os valores do resumo financeiro
+            resumo_financeiro = [
+                ("Custo Total", total_custo),
+                ("Despesas Totais", total_despesas),
+                ("Imposto Total", imposto_total),
+                ("Valor de Venda Total", total_venda),
+                ("Lucro Total", lucro_total)
+            ]
+
+            for descricao, valor in resumo_financeiro:
+                verifica_espaco(25)  # Garante espaço antes da nova linha
+
+                valor_formatado = formatar_moeda(valor)  # 🔹 Formatação correta R$ 1.234,56
+
+                altura_linha = 20  # Altura fixa para cada linha
+
+                if y - altura_linha < MARGIN_Y:
+                    pdf.showPage()
+                    y = desenha_cabecalho_resumo()
+                    y -= 40
+
+                pdf.rect(MARGIN_X, y - altura_linha, largura_total, altura_linha, fill=0)
+
+                pdf.drawString(colunas_resumo[0]["x"] + 5, y - 15, descricao)
+                pdf.drawString(colunas_resumo[1]["x"] + 5, y - 15, valor_formatado)
+
+                # 🔹 Adicionando bordas verticais para separar colunas
+                for coluna in colunas_resumo:
+                    pdf.line(coluna["x"], y - altura_linha, coluna["x"], y)
+
+                pdf.line(MARGIN_X + largura_total, y - altura_linha, MARGIN_X + largura_total,
+                         y)  # Última linha vertical
+
+                pdf.line(MARGIN_X, y - altura_linha, MARGIN_X + largura_total,
+                         y - altura_linha)  # Linha horizontal inferior
+                y -= altura_linha
+
+            y -= 30  # Espaço extra após a tabela de resumo
+
+        def desenha_observacao():
+            """Adiciona observação respeitando as margens"""
+            nonlocal y  # ✅ Correto, pois y pertence à função externa imprimir_proposta_servico()
+            verifica_espaco(50)
+
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Observações:")
+            y -= 20
+
+            pdf.setFont("Helvetica", 10)
+            obs_texto = quebra_texto(obs, CONTENT_WIDTH - 20)
+
+            for linha in obs_texto:
+                verifica_espaco(15)
+                pdf.drawString(MARGIN_X + 10, y, linha)
+                y -= 30
+
+        def desenha_data_assinatura():
+            """Desenha a data atual e o campo de assinatura no final do documento"""
+            nonlocal y
+
+            # ✅ Verifica se há espaço suficiente, senão cria nova página
+            verifica_espaco(60)
+
+            # 🔹 Adiciona a Data Atual (Formato: DD/MM/AAAA)
+            pdf.setFont("Helvetica", 12)
+            pdf.drawString(MARGIN_X, y, f"Data: {datetime.now().strftime('%d/%m/%Y')}")
+            y -= 30  # Espaço antes da linha de assinatura
+
+            # 🔹 Define a posição centralizada da assinatura
+            assinatura_x = width / 2 - 100  # Centraliza horizontalmente
+            assinatura_largura = 200  # Largura da linha de assinatura
+
+            # 🔹 Linha para Assinatura (Centralizada)
+            pdf.line(assinatura_x, y, assinatura_x + assinatura_largura, y)  # Desenha a linha
+            y -= 15  # Ajuste abaixo da linha
+
+            # 🔹 Nome e CPF do Sócio (Centralizados)
+            if empresa and empresa.nome_socio:
+                pdf.setFont("Helvetica-Bold", 12)
+                pdf.drawCentredString(width / 2, y, empresa.nome_socio)  # Nome centralizado
+                y -= 15  # Ajuste de espaçamento
+                pdf.setFont("Helvetica", 12)
+                pdf.drawCentredString(width / 2, y, f"CPF: {empresa.cpf_socio}")  # CPF centralizado
+                y -= 30  # Ajuste final
+
+        desenha_marca_dagua()
+        if pagina_inicial:
+            desenha_cabecalho()  # ✅ O cabeçalho será desenhado apenas na primeira página
+        desenha_tabela()
+        # ✅ CORRETO (passando despesas_data corretamente)
+        desenha_tabela_despesas(despesas_data)
+        desenha_resumo_financeiro()  # ✅ INCLUI O RESUMO FINANCEIRO AQUI
+        desenha_resumo_total()
+
+        desenha_observacao()
+        desenha_data_assinatura()
+
+        pdf.save()
+        buffer.seek(0)
+
+        return send_file(buffer, as_attachment=True, download_name=f"Composicao_custos_{proposta_id}.pdf",
+                         mimetype='application/pdf')
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF: {e}")
+        return redirect(url_for('simulacao'))
+
+
+# 🔹 Exibir detalhes de uma proposta de serviço
+@app.route('/proposta_servico/<int:proposta_id>/detalhes', methods=['GET'])
+@login_required
+def detalhes_proposta_servico(proposta_id):
+    try:
+        proposta = CalculadoraPasso1Servicos.query.get(proposta_id)
+        if not proposta:
+            return jsonify({'error': 'Proposta não encontrada'}), 404
+
+        return jsonify({
+            'id': proposta.id,
+            'numero_processo': proposta.numero_processo,
+            'cnpj': proposta.cnpj,
+            'razao_social': proposta.razao_social,
+            'status': proposta.status,
+        })
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar detalhes da proposta {proposta_id}: {e}")
+        return jsonify({'error': 'Erro ao carregar os detalhes da proposta.'}), 500
+
+
+@app.route('/proposta_servico/<int:proposta_id>/alterar_status', methods=['POST'])
+@login_required
+def alterar_status_proposta_servico(proposta_id):
+    try:
+        # Obtém os dados do JSON enviado pelo front-end
+        data = request.get_json()
+        novo_status = data.get("status")
+
+        # Verifica se o status foi enviado corretamente
+        if not novo_status:
+            return jsonify({"error": "Status não informado."}), 400
+
+        # Obtém o usuário principal para evitar conflitos
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Busca a proposta do banco de dados
+        proposta = CalculadoraPasso1Servicos.query.filter_by(id=proposta_id, user_id=user_principal_id).first()
+
+        if not proposta:
+            return jsonify({"error": "Proposta de serviço não encontrada."}), 404
+
+        # Atualiza o status
+        proposta.status = novo_status
+        db.session.commit()
+
+        return jsonify({"success": True, "message": "Status atualizado com sucesso!"}), 200
+    except Exception as e:
+        app.logger.error(f"Erro ao alterar status da proposta de serviço: {e}")
+        return jsonify({"error": "Erro ao alterar status da proposta de serviço."}), 500
+
+
+# 🔹 Excluir proposta de serviço e todas as despesas associadas
+
+
+# -----------------------PAGINA DECLARAÇOES---------------
+# -----------------------PÁGINA DECLARAÇÕES (layout preservado + melhorias)---------------
+from io import BytesIO
+from datetime import datetime
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from flask import send_file, flash, redirect, url_for
+from reportlab.platypus import Paragraph
+from reportlab.lib.styles import ParagraphStyle
+
+# -----------------------PÁGINA DECLARAÇÕES (layout preservado + melhorias)---------------
+from io import BytesIO
+from datetime import datetime
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from flask import send_file, flash, redirect, url_for
+from reportlab.platypus import Paragraph
+from reportlab.lib.styles import ParagraphStyle
+
+
+@app.route('/precificaja/anexos/gerar', methods=['POST'])
+@login_required
+def gerar_anexos():
+    try:
+        anexos_selecionados = request.form.getlist('anexos')
+        licitacao_id = request.form.get('licitacao_id')  # ID da licitação selecionada
+
+        if not anexos_selecionados:
+            flash("Nenhum anexo selecionado.", "danger")
+            return redirect(url_for('anexos_declaracoes'))
+
+        empresa = Empresa.query.filter_by(user_id=current_user.id).first()
+        if not empresa:
+            flash("Configure sua empresa para gerar documentos.", "danger")
+            return redirect(url_for('listar_propostas'))
+
+        # 🔹 Primeiro, verificar se pertence à tabela de Produtos (CalculadoraPasso1)
+        tipo_id = request.form.get("licitacao_id")
+        licitacao = None
+
+        if tipo_id and "|" in tipo_id:
+            tipo, licitacao_id = tipo_id.split("|")
+            licitacao_id = int(licitacao_id)
+
+            if tipo == "Produto":
+                licitacao = CalculadoraPasso1.query.filter_by(id=licitacao_id).first()
+            elif tipo == "Serviço":
+                licitacao = CalculadoraPasso1Servicos.query.filter_by(id=licitacao_id).first()
+
+        # 🔹 Obtém o CNPJ do órgão licitante da tabela correta
+        cnpj_licitante = getattr(licitacao, 'cnpj', "CNPJ não informado")
+
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+
+        # mesmas margens do seu código
+        margin_x = 50
+        margin_y = 50
+        y = height - margin_y
+
+        # ---------------- helpers (ajustados, preservando visual) ----------------
+        def desenha_marca_dagua():
+            # mantém a sua logo como marca d’água (mesmos dados)
+            if empresa.logo:
+                try:
+                    pdf.saveState()
+                    try:
+                        pdf.setFillAlpha(0.08)  # leve transparência; ignora se não suportado
+                    except Exception:
+                        pass
+                    logo = ImageReader(empresa.logo)
+                    lw, lh = logo.getSize()
+                    alvo_w, alvo_h = 500, 300
+                    esc = min(alvo_w / lw, alvo_h / lh)
+                    pdf.drawImage(
+                        logo,
+                        (width - lw * esc) / 2,
+                        (height - lh * esc) / 2,
+                        lw * esc, lh * esc,
+                        mask='auto'
+                    )
+                except Exception as e:
+                    app.logger.error(f"Erro marca d'água: {e}")
+                finally:
+                    try:
+                        pdf.restoreState()
+                    except Exception:
+                        pass
+
+        def quebra_pagina():
+            nonlocal y
+            pdf.showPage()
+            desenha_marca_dagua()
+            y = height - margin_y
+
+        def adiciona_espaco(espaco):
+            nonlocal y
+            y -= espaco
+            if y < margin_y:
+                quebra_pagina()
+
+        def escreve_texto_justificado(texto):
+            """
+            Escreve um texto justificado no PDF, garantindo espaçamento suave
+            entre palavras e última linha NÃO justificada.
+            """
+            nonlocal y
+            pdf.setFont("Helvetica", 12)
+            margem_final = width - margin_x
+            largura_texto = margem_final - margin_x
+            leading = 15  # seu passo de linha
+
+            paragrafos = (texto or "").split("\n\n")
+
+            for paragrafo in paragrafos:
+                if not paragrafo.strip():
+                    continue  # Ignora parágrafos vazios
+
+                palavras = paragrafo.split()
+                linha_atual = []
+
+                def imprime_linha(linha_words, justificar=True):
+                    nonlocal y
+                    if y - leading < margin_y:
+                        quebra_pagina()
+                    if (not justificar) or len(linha_words) <= 1:
+                        pdf.drawString(margin_x, y, " ".join(linha_words))
+                        y -= leading
+                        return
+                    largura_palavras = sum(pdf.stringWidth(w, "Helvetica", 12) for w in linha_words)
+                    espacos = len(linha_words) - 1
+                    extra = max(0, (largura_texto - largura_palavras) / espacos)
+                    x = margin_x
+                    for i, w in enumerate(linha_words):
+                        pdf.drawString(x, y, w)
+                        if i < len(linha_words) - 1:
+                            x += pdf.stringWidth(w, "Helvetica", 12) + extra
+                    y -= leading
+
+                for palavra in palavras:
+                    linha_temp = " ".join(linha_atual + [palavra])
+                    if pdf.stringWidth(linha_temp, "Helvetica", 12) <= largura_texto:
+                        linha_atual.append(palavra)
+                    else:
+                        imprime_linha(linha_atual, justificar=True)
+                        linha_atual = [palavra]
+
+                # Última linha (não justificada)
+                if linha_atual:
+                    imprime_linha(linha_atual, justificar=False)
+
+                adiciona_espaco(15)  # Espaço entre parágrafos
+
+        def escreve_titulo_quebrado_centralizado(titulo, fonte="Helvetica-Bold", tamanho=14):
+            nonlocal y
+            pdf.setFont(fonte, tamanho)
+            max_largura = width - 2 * margin_x
+            palavras = titulo.split()
+            linha = ""
+            linhas = []
+
+            for palavra in palavras:
+                temp = (linha + " " + palavra).strip()
+                if pdf.stringWidth(temp, fonte, tamanho) < max_largura:
+                    linha = temp
+                else:
+                    linhas.append(linha)
+                    linha = palavra
+            if linha:
+                linhas.append(linha)
+
+            for ln in linhas:
+                if y - 20 < margin_y:
+                    quebra_pagina()
+                pdf.drawCentredString(width / 2, y, ln)
+                adiciona_espaco(20)
+
+        def desenha_cabecalho(titulo):
+            nonlocal y
+            texto_x = margin_x
+            logo_x = width - margin_x - 150
+
+            escreve_titulo_quebrado_centralizado(titulo)
+
+            pdf.setFont("Helvetica", 10)
+            largura_max_texto = width - margin_x - 200
+
+            def escreve_texto_quebrado_limitado(texto):
+                nonlocal y
+                palavras = str(texto or "").split()
+                linha_atual = ""
+                while palavras:
+                    palavra = palavras.pop(0)
+                    teste = (linha_atual + " " + palavra).strip()
+                    if pdf.stringWidth(teste, "Helvetica", 10) < largura_max_texto:
+                        linha_atual = teste
+                    else:
+                        if y - 15 < margin_y:
+                            quebra_pagina()
+                        pdf.drawString(texto_x, y, linha_atual)
+                        adiciona_espaco(15)
+                        linha_atual = palavra
+                if linha_atual:
+                    if y - 15 < margin_y:
+                        quebra_pagina()
+                    pdf.drawString(texto_x, y, linha_atual)
+                    adiciona_espaco(15)
+
+            # mantém seus campos
+            if y - 15 < margin_y:
+                quebra_pagina()
+            pdf.drawString(texto_x, y, "Razão Social:")
+            adiciona_espaco(15)
+            escreve_texto_quebrado_limitado(empresa.razao_social)
+
+            pdf.drawString(texto_x, y, "CNPJ:")
+            adiciona_espaco(15)
+            escreve_texto_quebrado_limitado(empresa.cnpj)
+
+            pdf.drawString(texto_x, y, "Endereço:")
+            adiciona_espaco(15)
+            escreve_texto_quebrado_limitado(empresa.endereco)
+
+            pdf.drawString(texto_x, y, "E-mail:")
+            adiciona_espaco(15)
+            escreve_texto_quebrado_limitado(empresa.email if empresa.email else "Não informado")
+
+            # LOGO MANTIDA
+            if empresa.logo:
+                try:
+                    logo = ImageReader(empresa.logo)
+                    original_width, original_height = logo.getSize()
+                    scale = min(150 / original_width, 75 / original_height)
+                    pdf.drawImage(
+                        logo,
+                        logo_x,
+                        y + 50,
+                        original_width * scale,
+                        original_height * scale,
+                        mask='auto'
+                    )
+                except Exception as e:
+                    app.logger.error(f"Erro ao carregar logo: {e}")
+
+            adiciona_espaco(50)
+
+        def bloco_assinatura(nome, cpf, largura_linha=None, fonte="Helvetica", tamanho_inicial=12, tamanho_min=8):
+            """
+            Centraliza a linha de assinatura e posiciona 'Nome - CPF' exatamente sobre a linha,
+            sem quebra (reduzindo a fonte e, se preciso, elipsando no meio).
+            """
+            nonlocal y
+
+            # Quebra se não houver altura suficiente
+            altura_necessaria = 70
+            if y - altura_necessaria < margin_y:
+                quebra_pagina()
+
+            # Geometria da área e da linha
+            area_w = width - 2 * margin_x
+            line_w = largura_linha or min(380, area_w * 0.7)  # largura padrão/relativa
+            x1 = margin_x + (area_w - line_w) / 2
+            x2 = x1 + line_w
+            y_line = y - 30
+
+            # Texto base (sem quebra)
+            base_txt = f"{(nome or '').strip()} - CPF: {(cpf or '').strip()}"
+
+            # Ajuste de tamanho de fonte até caber
+            size = tamanho_inicial
+            max_text_w = line_w - 10  # 5pt de folga de cada lado
+            tw = pdf.stringWidth(base_txt, fonte, size)
+            while tw > max_text_w and size > tamanho_min:
+                size -= 0.5
+                tw = pdf.stringWidth(base_txt, fonte, size)
+
+            # Se ainda não couber, elipsa no meio (…)
+            if tw > max_text_w:
+                esquerda = base_txt[: int(len(base_txt) * 0.6)]
+                direita = base_txt[-12:]  # preserva final (útil p/ CPF)
+                elipses = "…"
+                # Encurta 'esquerda' até caber
+                while pdf.stringWidth(esquerda + elipses + direita, fonte, size) > max_text_w and len(esquerda) > 5:
+                    esquerda = esquerda[:-1]
+                base_txt = esquerda + elipses + direita
+                tw = pdf.stringWidth(base_txt, fonte, size)
+
+            # Desenha a linha
+            pdf.setLineWidth(0.8)
+            pdf.line(x1, y_line, x2, y_line)
+
+            # Texto centralizado, imediatamente acima da linha (sem quebra)
+            pdf.setFont(fonte, size)
+            x_txt = x1 + (line_w - tw) / 2
+            y_txt = y_line + size * 0.35  # sobe um pouco acima da linha
+            pdf.drawString(x_txt, y_txt, base_txt)
+
+            # Legenda "Assinatura" centralizada abaixo
+            pdf.setFont(fonte, 10)
+            pdf.drawCentredString((x1 + x2) / 2, y_line - 12, "Assinatura")
+
+            # Atualiza cursor
+            y = y_line - 30
+
+        # ---------------- textos (EXATAMENTE como você enviou) ----------------
+        textos_anexos = {
+            'inexistencia': (
+                "Sob as penas da lei, a empresa declara que, até a presente data, não existem quaisquer fatos impeditivos "
+                "para sua habilitação no processo licitatório em questão, conforme disposto no artigo 66 da Lei nº 14.133/2021, "
+                "estando ciente da obrigatoriedade de comunicar imediatamente quaisquer fatos supervenientes que possam "
+                "alterar a veracidade desta declaração, sob pena de aplicação das sanções legais cabíveis."
+            ),
+            'requisitos': (
+                "Declara, sob compromisso formal e sob as penas da lei, que cumpre integralmente os requisitos de habilitação "
+                "exigidos no edital e seus anexos, nos termos do artigo 62 da Lei nº 14.133/2021, comprometendo-se a manter "
+                "todas as condições de habilitação e qualificação exigidas durante toda a vigência do contrato decorrente "
+                "do certame licitatório."
+            ),
+            'nao_menor': (
+                "Declara, em conformidade com o artigo 7º, inciso XXXIII, da Constituição Federal, e com a legislação trabalhista "
+                "vigente, que não emprega menores de dezoito anos em atividades noturnas, perigosas ou insalubres, bem como "
+                "não emprega menores de dezesseis anos, salvo na condição de aprendiz, a partir dos quatorze anos, em estrita "
+                "conformidade com o disposto no artigo 428 da Consolidação das Leis do Trabalho (CLT)."
+            ),
+            'independente': (
+                "Declara, sob as penas da lei, que a proposta apresentada foi elaborada de maneira totalmente independente, "
+                "sem qualquer interferência, influência ou comunicação prévia com concorrentes ou membros do órgão licitante, "
+                "nos termos do artigo 5º da Lei nº 14.133/2021. Declara, ainda, que não foi celebrado qualquer acordo, convênio, "
+                "ajuste ou prática que tenha como objetivo fraudar o caráter competitivo do processo licitatório."
+            ),
+            'micro_pequena': (
+                "Declara que a empresa encontra-se devidamente enquadrada como Microempresa (ME), Empresa de Pequeno Porte (EPP) "
+                "ou Microempreendedor Individual (MEI), nos termos da Lei Complementar nº 123/2006, e que cumpre integralmente "
+                "as condições e os requisitos necessários para usufruir dos benefícios previstos nessa legislação, assumindo a "
+                "responsabilidade pela veracidade das informações prestadas. Ademais, declara que, no ano-calendário de realização "
+                "desta licitação, os valores somados dos contratos celebrados com a Administração Pública não ultrapassam a receita "
+                "bruta máxima admitida para fins de enquadramento como empresa de pequeno porte, nos termos do art. 4º, § 2º da Lei nº 14.133/2021."
+            ),
+
+            'regularidade': (
+                "Declara, sob as penas da lei, que está em plena conformidade com as obrigações fiscais, trabalhistas e previdenciárias, "
+                "em especial quanto ao disposto nos artigos 63 e 68 da Lei nº 14.133/2021, bem como atende aos requisitos de "
+                "regularidade estabelecidos no edital, estando ciente da obrigatoriedade de manter essa regularidade durante toda a "
+                "vigência do contrato."
+            ),
+            'cumprimento': (
+                "Declara que possui pleno conhecimento das condições necessárias à execução do objeto contratual, conforme especificado "
+                "no edital e seus anexos, assumindo integral responsabilidade pelo cumprimento das obrigações assumidas, em conformidade "
+                "com os artigos 90 e 91 da Lei nº 14.133/2021, comprometendo-se a observar rigorosamente as normas técnicas, legais e "
+                "contratuais aplicáveis."
+            ),
+            'lei_anticorrupcao': (
+                "Declara, nos termos da Lei nº 12.846/2013 (Lei Anticorrupção), e do artigo 155 da Lei nº 14.133/2021, que não pratica, "
+                "nem permite que sejam praticados, sob sua responsabilidade, atos ilícitos que possam causar danos à Administração Pública "
+                "nacional ou estrangeira, comprometendo-se a adotar práticas e políticas de integridade, ética e conformidade que garantam "
+                "o cumprimento das normas legais aplicáveis e dos princípios constitucionais da moralidade e legalidade."
+            ),
+            'meio_ambiente': (
+                "Declara que está em conformidade com as exigências legais e regulamentares vigentes no âmbito ambiental, conforme "
+                "disposto na Lei nº 14.133/2021, no que tange à responsabilidade ambiental, comprometendo-se a adotar todas as medidas "
+                "necessárias para garantir a preservação ambiental e o atendimento às condições estabelecidas nos licenciamentos e "
+                "autorizações pertinentes, sob pena de responsabilização civil, administrativa e penal."
+            ),
+            'nao_servidor_publico': (
+                "Declara, para os fins de atendimento ao disposto no artigo 7º da Lei nº 14.133/2021, que não possui, em seu quadro societário, "
+                "servidor público da ativa, direta ou indiretamente vinculado ao órgão contratante, estando plenamente ciente das implicações "
+                "legais decorrentes da inobservância desta disposição legal."
+            ),
+            'declaracao_unificada': (
+                "Sob as penas da lei, declara que:\n\n"
+                "Sob as penas da lei, declara que:\n\n"
+
+                "Não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre e não emprega menor de 16 anos, "
+                "salvo menor, a partir de 14 anos, na condição de aprendiz, nos termos do art. 7°, XXXIII, da Constituição.\n\n"
+
+                "Não possui empregados executando trabalho degradante ou forçado, observando o disposto nos incisos III e IV do "
+                "art. 1º e no inciso III do art. 5º da Constituição Federal.\n\n"
+
+                "Cumpre as exigências de reserva de cargos para pessoa com deficiência e para reabilitado da Previdência Social, "
+                "previstas em lei e em outras normas específicas.\n\n"
+
+                "Está ciente e concorda com as condições contidas no Edital e seus anexos, bem como de que a proposta apresentada "
+                "compreende a integralidade dos custos para atendimento dos direitos trabalhistas assegurados na Constituição Federal, "
+                "nas leis trabalhistas, nas normas infralegais, nas convenções coletivas de trabalho e nos termos de ajustamento de conduta "
+                "vigentes na data de sua entrega em definitivo e que cumpre plenamente os requisitos de habilitação definidos no instrumento convocatório.\n\n"
+
+                "Damos consentimento à disponibilização dos dados da empresa e dados pessoais dos sócios, necessários à realização do processo "
+                "licitatório e formalização do instrumento contratual, nos termos do art. 7º, inciso I, da Lei nº 13.709/2018.\n\n"
+
+                "Não há nada que impeça, juridicamente, a minha habilitação neste momento. Se algum fato impeditivo acontecer depois, "
+                "estarei obrigado a informar ao Município.\n\n"
+
+                "A proposta foi elaborada de forma independente e nenhuma empresa potencialmente participante da licitação conhece meu preço.\n\n"
+
+                "A proposta compreende a integralidade dos custos para atendimento dos direitos trabalhistas assegurados na Constituição Federal, "
+                "nas leis trabalhistas, nas normas infralegais, nas convenções coletivas de trabalho e nos termos de ajustamento de conduta "
+                "vigentes na data de entrega das propostas.\n\n"
+
+                "Não fomos condenados judicialmente, com trânsito em julgado, por exploração de trabalho infantil, por submissão de trabalhadores "
+                "a condições análogas às de escravo ou por contratação de adolescentes nos casos vedados pela legislação trabalhista.\n\n"
+
+                "Nossa empresa cumpre as exigências de reserva de cargos previstas em lei e normas específicas para pessoa com deficiência, "
+                "reabilitado da Previdência Social e aprendiz.\n\n"
+
+                "Temos ciência de que a declaração falsa acarretará aplicação de declaração de inidoneidade para licitar ou contratar com toda a "
+                "Administração Pública do País, além das demais sanções legais cabíveis.\n\n"
+            ),
+            'visita_local': (
+                "Declara, sob as penas da lei, que a empresa realizou visita técnica ao local da obra/serviços e possui pleno conhecimento "
+                "das condições e peculiaridades do ambiente, estando ciente de todos os fatores que possam influenciar na execução do contrato. "
+                "Compromete-se a cumprir integralmente as exigências do edital e da Lei nº 14.133/2021, assumindo total responsabilidade "
+                "pela execução do objeto contratual, sem alegar desconhecimento futuro para justificar reajustes ou reequilíbrios financeiros."
+            ),
+
+            'processo_selecao': (
+                "Declara, sob compromisso formal e as penas da lei, que atende integralmente aos requisitos exigidos no processo de seleção, "
+                "nos termos do edital e da Lei nº 14.133/2021. Afirma possuir capacidade técnica, operacional, financeira e administrativa "
+                "necessária para a execução do objeto licitado e reconhece que a prestação de informações falsas pode resultar nas penalidades "
+                "previstas no artigo 155 da referida lei."
+            ),
+
+            'inexistencia_parentesco': (
+                "Declara, sob as penas da lei, que não há qualquer vínculo de parentesco, em linha reta, colateral ou por afinidade, até o terceiro grau, "
+                "entre sócios, diretores ou representantes da empresa e agentes públicos que ocupem cargo de direção, chefia ou assessoramento no órgão licitante. "
+                "Declara ainda que não há relação de parentesco com servidores que possam influenciar o processo licitatório, nos termos da Lei nº 14.133/2021. "
+                "Reconhece que a prestação de informações falsas pode ensejar penalidades administrativas e criminais previstas na legislação vigente."
+            ),
+            'pcd_menos_100': (
+                "Declara, sob as penas da lei, em especial nos termos do artigo 65, inciso II, alínea 'e' da Lei nº 14.133/2021, e do artigo 93 da Lei nº 8.213/1991, "
+                "que a empresa possui atualmente menos de 100 (cem) empregados em seu quadro funcional, razão pela qual não está legalmente "
+                "obrigada a manter reserva de cargos destinada a pessoas com deficiência ou reabilitadas da Previdência Social. "
+                "Declara, ainda, estar ciente de que o cumprimento da legislação vigente será verificado pela Administração Pública e que quaisquer "
+                "alterações relevantes no número de empregados deverão ser prontamente comunicadas, sob pena de aplicação das sanções cabíveis."
+            ),
+
+            'pcd_100_ou_mais': (
+                "Declara, sob as penas da lei, em conformidade com o artigo 65, inciso II, alínea 'e' da Lei nº 14.133/2021, e com o artigo 93 da Lei nº 8.213/1991, "
+                "que a empresa possui 100 (cem) ou mais empregados e cumpre integralmente as exigências legais referentes à reserva de cargos "
+                "para pessoas com deficiência e reabilitadas da Previdência Social, mantendo em seu quadro funcional o percentual previsto em lei. "
+                "Compromete-se, ainda, a manter tal cumprimento durante toda a execução contratual, caso seja contratada, e a fornecer documentação comprobatória "
+                "sempre que solicitada pela Administração Pública, sob pena de aplicação das sanções legais aplicáveis."
+            ),
+
+            'simples_nacional': (
+                "Declara, sob as penas da lei, que a empresa está devidamente enquadrada como Microempresa (ME), "
+                "Empresa de Pequeno Porte (EPP) ou Microempreendedor Individual (MEI), conforme o regime do Simples Nacional, "
+                "nos termos da Lei Complementar nº 123/2006. Declara, ainda, que atende aos requisitos legais para usufruir dos benefícios "
+                "dessa condição e que não incorre em nenhuma das hipóteses de vedação previstas nos §§ 4º e 5º do art. 3º da referida lei. "
+                "Compromete-se a comunicar imediatamente qualquer alteração que venha a descaracterizar seu enquadramento, conforme determina a legislação, "
+                "estando ciente das sanções previstas em caso de prestação de informações falsas, nos termos da Lei nº 14.133/2021."
+            ),
+        }
+
+        # Mapeia nomes técnicos para títulos formatados corretamente (preservado)
+        titulos_formatados = {
+            'inexistencia': 'Inexistência de Fatos Impeditivos',
+            'requisitos': 'Atendimento aos Requisitos de Habilitação',
+            'nao_menor': 'Não Emprego de Menores',
+            'independente': 'Elaboração Independente de Proposta',
+            'micro_pequena': 'Microempresa e Empresa de Pequeno Porte',
+            'regularidade': 'Regularidade Fiscal e Trabalhista',
+            'cumprimento': 'Cumprimento das Exigências Contratuais',
+            'lei_anticorrupcao': 'Conformidade com a Lei Anticorrupção',
+            'meio_ambiente': 'Compromisso com a Responsabilidade Ambiental',
+            'nao_servidor_publico': 'Ausência de Servidor Público no Quadro Societário',
+            'declaracao_unificada': 'Declaração Unificada',
+            'visita_local': 'Visita Técnica ao Local',
+            'processo_selecao': 'Atendimento aos Requisitos do Processo Seletivo',
+            'inexistencia_parentesco': 'Inexistência de Parentesco com Servidores',
+            'pcd_menos_100': "Declaração de Cumprimento da Reserva Legal de Cargos para Pessoas com Deficiência e Reabilitados (Empresa com menos de 100 empregados)",
+            'pcd_100_ou_mais': "Declaração de Cumprimento da Reserva Legal de Cargos para Pessoas com Deficiência e Reabilitados (Empresa com 100 ou mais empregados)",
+            'simples_nacional': "Enquadramento no Simples Nacional",
+        }
+
+        # --------------- Renderização preservando seu fluxo ---------------
+        desenha_marca_dagua()  # primeira página já com marca d’água
+
+        for idx, tipo in enumerate(anexos_selecionados):
+            if tipo not in textos_anexos:
+                continue
+
+            if idx > 0:
+                quebra_pagina()
+
+            titulo_formatado = titulos_formatados.get(tipo, tipo.replace('_', ' ').title())
+
+            # Define título e cabeçalho (mantido)
+            desenha_cabecalho(f"Declaração de {titulo_formatado}")
+
+            # ✅ Bloco com quebra automática para razão social, CNPJ e processo (mantido)
+            style = ParagraphStyle(
+                name='normal',
+                fontName="Helvetica-Bold",
+                fontSize=12,
+                leading=14
+            )
+
+            info_blocos = [
+                f"À {getattr(licitacao, 'razao_social', '')}",
+                f"CNPJ: {cnpj_licitante}",
+                f"Número do Processo: {getattr(licitacao, 'numero_processo', '')}"
+            ]
+
+            for linha in info_blocos:
+                p = Paragraph(linha, style)
+                w, h = p.wrap(width - 2 * margin_x, 0)
+                # quebras seguras
+                if y - h < margin_y:
+                    quebra_pagina()
+                p.drawOn(pdf, margin_x, y - h)
+                y -= h + 5  # espaçamento entre linhas
+
+            y -= 20  # espaço extra após os dados
+
+            # Define corpo do texto (preservado, agora com justificação suave)
+            pdf.setFont("Helvetica", 12)
+            corpo_declaracao = (
+                f"{empresa.razao_social}, CNPJ {empresa.cnpj}, sediada à {empresa.endereco}, "
+                f"representada pelo(a) sócio(a)/representante {empresa.nome_socio}, CPF {empresa.cpf_socio}, declara: "
+                f"{textos_anexos[tipo]}"
+            )
+            escreve_texto_justificado(corpo_declaracao)
+
+            if tipo == "micro_pequena":
+                adiciona_espaco(20)
+                pdf.drawString(margin_x, y, "☐ ME   ☐ EPP   ☐ MEI")
+                adiciona_espaco(20)
+
+            # Data e Assinatura (ajuste aqui: assinatura central com nome+CPF alinhados)
+            adiciona_espaco(30)
+            pdf.drawString(margin_x, y, f"Data: {datetime.now().strftime('%d/%m/%Y')}")
+            adiciona_espaco(20)
+            bloco_assinatura(
+                empresa.nome_socio,
+                empresa.cpf_socio,
+                largura_linha=min(380, int((width - 2 * margin_x) * 0.75))
+            )
+
+        pdf.save()
+        buffer.seek(0)
+        return send_file(buffer, as_attachment=True, download_name="anexos_documentos.pdf", mimetype='application/pdf')
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF: {e}")
+        flash("Erro ao gerar os documentos.", "danger")
+        return redirect(url_for('anexos_declaracoes'))
+
+
+@app.route('/precificaja/gerador_documentos/anexos_declaracoes')
+@login_required
+def anexos_declaracoes():
+    """
+    Lista as licitações disponíveis para o usuário logado, separando os dados das tabelas CalculadoraPasso1 e CalculadoraPasso1Servicos.
+    """
+    try:
+        user_id = current_user.id
+        user_type = session.get('user_type', 'usuario')
+        user_principal_id = current_user.user_principal_id if user_type == 'subusuario' else user_id
+
+        app.logger.info(f"🔍 DEBUG - Usuário logado: {user_id}, Tipo: {user_type}, Principal: {user_principal_id}")
+
+        # Consultar licitações de produtos
+        if user_type == 'subusuario':
+            licitacoes_produtos = CalculadoraPasso1.query.filter(
+                (CalculadoraPasso1.user_id == user_principal_id) |
+                (CalculadoraPasso1.subusuario_id == user_id)
+            ).all()
+        else:
+            licitacoes_produtos = CalculadoraPasso1.query.filter_by(user_id=user_principal_id).all()
+
+        # Consultar licitações de serviços
+        licitacoes_servicos = CalculadoraPasso1Servicos.query.filter_by(user_id=user_principal_id).all()
+
+        # Unir resultados em uma lista detalhada, diferenciando por tipo (Produto ou Serviço)
+        # Unir resultados em uma lista detalhada, diferenciando por tipo (Produto ou Serviço)
+        licitacoes_detalhadas = [
+                                    {"tipo": "Produto", "id": licitacao.id, "razao_social": licitacao.razao_social,
+                                     "numero_processo": licitacao.numero_processo}
+                                    for licitacao in licitacoes_produtos
+                                ] + [
+                                    {"tipo": "Serviço", "id": licitacao.id, "razao_social": licitacao.razao_social,
+                                     "numero_processo": licitacao.numero_processo}
+                                    for licitacao in licitacoes_servicos
+                                ]
+
+        app.logger.info(f"✅ DEBUG - Licitações encontradas: {licitacoes_detalhadas}")
+
+        if not licitacoes_detalhadas:
+            flash("Nenhuma licitação encontrada para este usuário.", "danger")
+
+        return render_template("anexos.html", licitacoes=licitacoes_detalhadas)
+
+    except Exception as e:
+        app.logger.error(f"❌ ERRO ao carregar licitações: {str(e)}")
+        flash("Erro ao carregar as licitações.", "danger")
+        return redirect(url_for('dashboard'))
+
+
+# ============= HELPER COMPARTILHADO =============
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen import canvas
+from reportlab.platypus import Paragraph
+from reportlab.lib.styles import ParagraphStyle
+
+
+def _render_pdf_declaracao_manual(pdf, empresa, titulo_declaracao, texto_declaracao,
+                                  licitacao=None,
+                                  cnpj_licitante="CNPJ não informado",
+                                  orgao_licitante="Órgão não informado",
+                                  endereco_orgao="Endereço não informado"):
+    """
+    Desenha a declaração no 'pdf' com exatamente o mesmo layout
+    (cabeçalho, marca-d'água, corpo justificado e assinatura centralizada).
+    """
+    from datetime import datetime
+    width, height = A4
+    margin_x = 50
+    margin_y = 50
+    y = height - margin_y
+
+    # ---------- helpers locais ----------
+    def desenha_marca_dagua():
+        if empresa.logo:
+            try:
+                pdf.saveState()
+                try:
+                    pdf.setFillAlpha(0.1)
+                except Exception:
+                    pass
+                logo = ImageReader(empresa.logo)
+                lw, lh = logo.getSize()
+                alvo_w, alvo_h = 500, 300
+                esc = min(alvo_w / lw, alvo_h / lh)
+                pdf.drawImage(logo, (width - lw * esc) / 2, (height - lh * esc) / 2, lw * esc, lh * esc, mask='auto')
+            except Exception as e:
+                app.logger.error(f"Erro marca d'água: {e}")
+            finally:
+                try:
+                    pdf.restoreState()
+                except Exception:
+                    pass
+
+    def quebra_pagina():
+        nonlocal y
+        pdf.showPage()
+        desenha_marca_dagua()
+        y = height - margin_y
+
+    def adiciona_espaco(espaco):
+        nonlocal y
+        y -= espaco
+        if y < margin_y:
+            quebra_pagina()
+
+    def escreve_texto_justificado(texto):
+        """
+        Texto justificado com última linha não-justificada (igual ao da rota gerar_manual).
+        """
+        nonlocal y
+        fonte, tam, leading = "Helvetica", 12, 15
+        pdf.setFont(fonte, tam)
+
+        largura_texto = (width - margin_x) - margin_x
+        paragrafos = (texto or "").split("\n\n")
+
+        def imprime_linha(words, justificar=True):
+            nonlocal y
+            if y - leading < margin_y:
+                quebra_pagina()
+            if (not justificar) or len(words) <= 1:
+                pdf.drawString(margin_x, y, " ".join(words))
+                y -= leading
+                return
+            largura_palavras = sum(pdf.stringWidth(w, fonte, tam) for w in words)
+            espacos = len(words) - 1
+            extra = max(0, (largura_texto - largura_palavras) / espacos)
+            x = margin_x
+            for i, w in enumerate(words):
+                pdf.drawString(x, y, w)
+                if i < len(words) - 1:
+                    x += pdf.stringWidth(w, fonte, tam) + extra
+            y -= leading
+
+        for paragrafo in paragrafos:
+            if not paragrafo.strip():
+                continue
+            palavras = paragrafo.split()
+            linha = []
+            for p_ in palavras:
+                teste = " ".join(linha + [p_])
+                if pdf.stringWidth(teste, fonte, tam) <= largura_texto:
+                    linha.append(p_)
+                else:
+                    imprime_linha(linha, justificar=True)
+                    linha = [p_]
+            if linha:
+                imprime_linha(linha, justificar=False)
+            adiciona_espaco(15)
+
+    def escreve_titulo_quebrado_centralizado(titulo, fonte="Helvetica-Bold", tamanho=14):
+        nonlocal y
+        pdf.setFont(fonte, tamanho)
+        max_w = width - 2 * margin_x
+        palavras = (titulo or "").split()
+        linha, linhas = "", []
+        for p_ in palavras:
+            t = (linha + " " + p_).strip()
+            if pdf.stringWidth(t, fonte, tamanho) < max_w:
+                linha = t
+            else:
+                linhas.append(linha)
+                linha = p_
+        if linha:
+            linhas.append(linha)
+        for ln in linhas:
+            if y - 20 < margin_y:
+                quebra_pagina()
+            pdf.drawCentredString(width / 2, y, ln)
+            adiciona_espaco(20)
+
+    def desenha_cabecalho(titulo):
+        nonlocal y
+        texto_x = margin_x
+        logo_x = width - margin_x - 150
+
+        escreve_titulo_quebrado_centralizado(titulo)
+
+        pdf.setFont("Helvetica", 10)
+        largura_max = width - margin_x - 200
+
+        def escreve_quebrado(texto):
+            nonlocal y
+            palavras = str(texto or "").split()
+            linha = ""
+            while palavras:
+                p_ = palavras.pop(0)
+                t = (linha + " " + p_).strip()
+                if pdf.stringWidth(t, "Helvetica", 10) < largura_max:
+                    linha = t
+                else:
+                    if y - 15 < margin_y:
+                        quebra_pagina()
+                    pdf.drawString(texto_x, y, linha)
+                    adiciona_espaco(15)
+                    linha = p_
+            if linha:
+                if y - 15 < margin_y:
+                    quebra_pagina()
+                pdf.drawString(texto_x, y, linha)
+                adiciona_espaco(15)
+
+        pdf.drawString(texto_x, y, "Razão Social:")
+        adiciona_espaco(15)
+        escreve_quebrado(empresa.razao_social)
+
+        pdf.drawString(texto_x, y, "CNPJ:")
+        adiciona_espaco(15)
+        escreve_quebrado(empresa.cnpj)
+
+        pdf.drawString(texto_x, y, "Endereço:")
+        adiciona_espaco(15)
+        escreve_quebrado(empresa.endereco)
+
+        pdf.drawString(texto_x, y, "E-mail:")
+        adiciona_espaco(15)
+        escreve_quebrado(empresa.email if empresa.email else "Não informado")
+
+        if empresa.logo:
+            try:
+                logo = ImageReader(empresa.logo)
+                lw, lh = logo.getSize()
+                esc = min(150 / lw, 75 / lh)
+                pdf.drawImage(logo, logo_x, y + 50, lw * esc, lh * esc, mask='auto')
+            except Exception as e:
+                app.logger.error(f"Erro ao carregar logo: {e}")
+
+        adiciona_espaco(50)
+
+    def bloco_assinatura(nome, cpf, largura_linha=None, fonte="Helvetica", tamanho_inicial=12, tamanho_min=8):
+        """
+        Mesma assinatura centralizada do outro endpoint.
+        """
+        nonlocal y
+
+        altura_necessaria = 70
+        if y - altura_necessaria < margin_y:
+            quebra_pagina()
+
+        area_w = width - 2 * margin_x
+        line_w = largura_linha or min(380, area_w * 0.7)
+        x1 = margin_x + (area_w - line_w) / 2
+        x2 = x1 + line_w
+        y_line = y - 30
+
+        base_txt = f"{(nome or '').strip()} - CPF: {(cpf or '').strip()}"
+
+        size = tamanho_inicial
+        max_text_w = line_w - 10
+        tw = pdf.stringWidth(base_txt, fonte, size)
+        while tw > max_text_w and size > tamanho_min:
+            size -= 0.5
+            tw = pdf.stringWidth(base_txt, fonte, size)
+
+        if tw > max_text_w:
+            esquerda = base_txt[: int(len(base_txt) * 0.6)]
+            direita = base_txt[-12:]
+            while pdf.stringWidth(esquerda + "…" + direita, fonte, size) > max_text_w and len(esquerda) > 5:
+                esquerda = esquerda[:-1]
+            base_txt = esquerda + "…" + direita
+            tw = pdf.stringWidth(base_txt, fonte, size)
+
+        pdf.setLineWidth(0.8)
+        pdf.line(x1, y_line, x2, y_line)
+
+        pdf.setFont(fonte, size)
+        x_txt = x1 + (line_w - tw) / 2
+        y_txt = y_line + size * 0.35
+        pdf.drawString(x_txt, y_txt, base_txt)
+
+        pdf.setFont(fonte, 10)
+        pdf.drawCentredString((x1 + x2) / 2, y_line - 12, "Assinatura")
+
+        y = y_line - 30
+
+    # ---------- render ----------
+    desenha_marca_dagua()
+    desenha_cabecalho(titulo_declaracao)
+
+    if licitacao:
+        style = ParagraphStyle(name='normal', fontName="Helvetica-Bold", fontSize=12, leading=14)
+        info_blocos = [
+            f"À {getattr(licitacao, 'razao_social', orgao_licitante)}",
+            f"CNPJ: {cnpj_licitante}",
+            f"Número do Processo: {getattr(licitacao, 'numero_processo', '')}"
+        ]
+        for linha in info_blocos:
+            p = Paragraph(linha, style)
+            w, h = p.wrap(width - 2 * margin_x, 0)
+            if y - h < margin_y:
+                quebra_pagina()
+            p.drawOn(pdf, margin_x, y - h)
+            y -= h + 5
+        y -= 20
+
+    pdf.setFont("Helvetica", 12)
+    corpo = (
+        f"{empresa.razao_social}, CNPJ {empresa.cnpj}, sediada à {empresa.endereco}, "
+        f"representada pelo(a) sócio(a)/representante {empresa.nome_socio}, CPF {empresa.cpf_socio}, declara "
+        f"{texto_declaracao}"
+    )
+    escreve_texto_justificado(corpo)
+
+    adiciona_espaco(30)
+    pdf.setFont("Helvetica", 12)
+    pdf.drawString(margin_x, y, f"Data: {datetime.now().strftime('%d/%m/%Y')}")
+    adiciona_espaco(20)
+    bloco_assinatura(
+        empresa.nome_socio,
+        empresa.cpf_socio,
+        largura_linha=min(380, int((width - 2 * margin_x) * 0.75))
+    )
+
+
+# Código corrigido para as rotas de declaração manual
+# Nova rota para gerar PDF com declaração manual (CORRIGIDA + ASSINATURA CENTRAL)
+@app.route('/anexos/gerar_manual', methods=['POST'])
+@login_required
+def gerar_anexo_manual():
+    """
+    Gera PDF com declaração manual fornecida pelo usuário
+    """
+    try:
+        data = request.get_json()
+        texto_declaracao = data.get('texto_declaracao', '')
+        titulo_declaracao = data.get('titulo_declaracao', 'DECLARAÇÃO')  # usa o título do frontend
+        licitacao_id = data.get('licitacao_id', '')
+
+        if not texto_declaracao.strip():
+            return jsonify({'error': 'Texto da declaração não pode estar vazio'}), 400
+
+        empresa = Empresa.query.filter_by(user_id=current_user.id).first()
+        if not empresa:
+            return jsonify({'error': 'Configure sua empresa para gerar documentos'}), 400
+
+        # -------- Licitação (se houver) --------
+        licitacao = None
+        cnpj_licitante = "CNPJ não informado"
+        orgao_licitante = "Órgão não informado"
+        endereco_orgao = "Endereço não informado"
+
+        if licitacao_id and "|" in licitacao_id:
+            tipo, lid = licitacao_id.split("|")
+            lid = int(lid)
+
+            if tipo == "Produto":
+                licitacao = CalculadoraPasso1.query.filter_by(id=lid).first()
+            elif tipo == "Serviço":
+                licitacao = CalculadoraPasso1Servicos.query.filter_by(id=lid).first()
+
+            if licitacao:
+                cnpj_licitante = getattr(licitacao, 'cnpj', cnpj_licitante)
+                orgao_licitante = getattr(licitacao, 'razao_social', orgao_licitante)
+                endereco_orgao = getattr(licitacao, 'endereco', endereco_orgao)
+
+        # -------- PDF --------
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+
+        margin_x = 50
+        margin_y = 50
+        y = height - margin_y
+
+        # ---------- helpers ----------
+        def desenha_marca_dagua():
+            if empresa.logo:
+                try:
+                    pdf.saveState()
+                    try:
+                        pdf.setFillAlpha(0.1)
+                    except Exception:
+                        pass
+                    logo = ImageReader(empresa.logo)
+                    lw, lh = logo.getSize()
+                    alvo_w, alvo_h = 500, 300
+                    esc = min(alvo_w / lw, alvo_h / lh)
+                    pdf.drawImage(logo, (width - lw * esc) / 2, (height - lh * esc) / 2, lw * esc, lh * esc,
+                                  mask='auto')
+                except Exception as e:
+                    app.logger.error(f"Erro marca d'água: {e}")
+                finally:
+                    try:
+                        pdf.restoreState()
+                    except Exception:
+                        pass
+
+        def quebra_pagina():
+            nonlocal y
+            pdf.showPage()
+            desenha_marca_dagua()
+            y = height - margin_y
+
+        def adiciona_espaco(espaco):
+            nonlocal y
+            y -= espaco
+            if y < margin_y:
+                quebra_pagina()
+
+        def escreve_texto_justificado(texto):
+            """
+            Texto justificado com última linha não-justificada.
+            """
+            nonlocal y
+            fonte, tam, leading = "Helvetica", 12, 15
+            pdf.setFont(fonte, tam)
+
+            largura_texto = (width - margin_x) - margin_x
+            paragrafos = (texto or "").split("\n\n")
+
+            def imprime_linha(words, justificar=True):
+                nonlocal y
+                if y - leading < margin_y:
+                    quebra_pagina()
+                if (not justificar) or len(words) <= 1:
+                    pdf.drawString(margin_x, y, " ".join(words))
+                    y -= leading
+                    return
+                largura_palavras = sum(pdf.stringWidth(w, fonte, tam) for w in words)
+                espacos = len(words) - 1
+                extra = max(0, (largura_texto - largura_palavras) / espacos)
+                x = margin_x
+                for i, w in enumerate(words):
+                    pdf.drawString(x, y, w)
+                    if i < len(words) - 1:
+                        x += pdf.stringWidth(w, fonte, tam) + extra
+                y -= leading
+
+            for paragrafo in paragrafos:
+                if not paragrafo.strip():
+                    continue
+                palavras = paragrafo.split()
+                linha = []
+                for p in palavras:
+                    teste = " ".join(linha + [p])
+                    if pdf.stringWidth(teste, fonte, tam) <= largura_texto:
+                        linha.append(p)
+                    else:
+                        imprime_linha(linha, justificar=True)
+                        linha = [p]
+                if linha:
+                    imprime_linha(linha, justificar=False)
+                adiciona_espaco(15)
+
+        def escreve_titulo_quebrado_centralizado(titulo, fonte="Helvetica-Bold", tamanho=14):
+            nonlocal y
+            pdf.setFont(fonte, tamanho)
+            max_w = width - 2 * margin_x
+            palavras = (titulo or "").split()
+            linha, linhas = "", []
+            for p in palavras:
+                t = (linha + " " + p).strip()
+                if pdf.stringWidth(t, fonte, tamanho) < max_w:
+                    linha = t
+                else:
+                    linhas.append(linha)
+                    linha = p
+            if linha:
+                linhas.append(linha)
+            for ln in linhas:
+                if y - 20 < margin_y:
+                    quebra_pagina()
+                pdf.drawCentredString(width / 2, y, ln)
+                adiciona_espaco(20)
+
+        def desenha_cabecalho(titulo):
+            nonlocal y
+            texto_x = margin_x
+            logo_x = width - margin_x - 150
+
+            escreve_titulo_quebrado_centralizado(titulo)
+
+            pdf.setFont("Helvetica", 10)
+            largura_max = width - margin_x - 200
+
+            def escreve_quebrado(texto):
+                nonlocal y
+                palavras = str(texto or "").split()
+                linha = ""
+                while palavras:
+                    p = palavras.pop(0)
+                    t = (linha + " " + p).strip()
+                    if pdf.stringWidth(t, "Helvetica", 10) < largura_max:
+                        linha = t
+                    else:
+                        if y - 15 < margin_y:
+                            quebra_pagina()
+                        pdf.drawString(texto_x, y, linha)
+                        adiciona_espaco(15)
+                        linha = p
+                if linha:
+                    if y - 15 < margin_y:
+                        quebra_pagina()
+                    pdf.drawString(texto_x, y, linha)
+                    adiciona_espaco(15)
+
+            pdf.drawString(texto_x, y, "Razão Social:")
+            adiciona_espaco(15)
+            escreve_quebrado(empresa.razao_social)
+
+            pdf.drawString(texto_x, y, "CNPJ:")
+            adiciona_espaco(15)
+            escreve_quebrado(empresa.cnpj)
+
+            pdf.drawString(texto_x, y, "Endereço:")
+            adiciona_espaco(15)
+            escreve_quebrado(empresa.endereco)
+
+            pdf.drawString(texto_x, y, "E-mail:")
+            adiciona_espaco(15)
+            escreve_quebrado(empresa.email if empresa.email else "Não informado")
+
+            if empresa.logo:
+                try:
+                    logo = ImageReader(empresa.logo)
+                    lw, lh = logo.getSize()
+                    esc = min(150 / lw, 75 / lh)
+                    pdf.drawImage(logo, logo_x, y + 50, lw * esc, lh * esc, mask='auto')
+                except Exception as e:
+                    app.logger.error(f"Erro ao carregar logo: {e}")
+
+            adiciona_espaco(50)
+
+        # === BLOCO DE ASSINATURA CENTRALIZADO (idêntico ao do outro endpoint) ===
+        def bloco_assinatura(nome, cpf, largura_linha=None, fonte="Helvetica", tamanho_inicial=12, tamanho_min=8):
+            """
+            Centraliza a linha de assinatura e posiciona 'Nome - CPF' exatamente sobre a linha,
+            sem quebra (reduzindo fonte e, se preciso, elipsando no meio).
+            """
+            nonlocal y
+
+            altura_necessaria = 70
+            if y - altura_necessaria < margin_y:
+                quebra_pagina()
+
+            area_w = width - 2 * margin_x
+            line_w = largura_linha or min(380, area_w * 0.7)
+            x1 = margin_x + (area_w - line_w) / 2
+            x2 = x1 + line_w
+            y_line = y - 30
+
+            base_txt = f"{(nome or '').strip()} - CPF: {(cpf or '').strip()}"
+
+            size = tamanho_inicial
+            max_text_w = line_w - 10
+            tw = pdf.stringWidth(base_txt, fonte, size)
+            while tw > max_text_w and size > tamanho_min:
+                size -= 0.5
+                tw = pdf.stringWidth(base_txt, fonte, size)
+
+            if tw > max_text_w:
+                esquerda = base_txt[: int(len(base_txt) * 0.6)]
+                direita = base_txt[-12:]
+                while pdf.stringWidth(esquerda + "…" + direita, fonte, size) > max_text_w and len(esquerda) > 5:
+                    esquerda = esquerda[:-1]
+                base_txt = esquerda + "…" + direita
+                tw = pdf.stringWidth(base_txt, fonte, size)
+
+            pdf.setLineWidth(0.8)
+            pdf.line(x1, y_line, x2, y_line)
+
+            pdf.setFont(fonte, size)
+            x_txt = x1 + (line_w - tw) / 2
+            y_txt = y_line + size * 0.35
+            pdf.drawString(x_txt, y_txt, base_txt)
+
+            pdf.setFont(fonte, 10)
+            pdf.drawCentredString((x1 + x2) / 2, y_line - 12, "Assinatura")
+
+            y = y_line - 30
+
+        # -------- Render --------
+        desenha_marca_dagua()
+        desenha_cabecalho(titulo_declaracao)
+
+        if licitacao:
+            from reportlab.platypus import Paragraph
+            from reportlab.lib.styles import ParagraphStyle
+
+            style = ParagraphStyle(name='normal', fontName="Helvetica-Bold", fontSize=12, leading=14)
+
+            info_blocos = [
+                f"À {getattr(licitacao, 'razao_social', '')}",
+                f"CNPJ: {cnpj_licitante}",
+                f"Número do Processo: {getattr(licitacao, 'numero_processo', '')}"
+            ]
+
+            for linha in info_blocos:
+                p = Paragraph(linha, style)
+                w, h = p.wrap(width - 2 * margin_x, 0)
+                if y - h < margin_y:
+                    quebra_pagina()
+                p.drawOn(pdf, margin_x, y - h)
+                y -= h + 5
+
+            y -= 20
+
+        # Corpo da declaração
+        pdf.setFont("Helvetica", 12)
+        corpo_declaracao = (
+            f"{empresa.razao_social}, CNPJ {empresa.cnpj}, sediada à {empresa.endereco}, "
+            f"representada pelo(a) sócio(a)/representante {empresa.nome_socio}, CPF {empresa.cpf_socio}, declara "
+            f"{texto_declaracao}"
+        )
+        escreve_texto_justificado(corpo_declaracao)
+
+        # Data + ASSINATURA CENTRALIZADA
+        adiciona_espaco(30)
+        pdf.setFont("Helvetica", 12)
+        pdf.drawString(margin_x, y, f"Data: {datetime.now().strftime('%d/%m/%Y')}")
+        adiciona_espaco(20)
+        bloco_assinatura(
+            empresa.nome_socio,
+            empresa.cpf_socio,
+            largura_linha=min(380, int((width - 2 * margin_x) * 0.75))
+        )
+
+        # Finaliza PDF
+        pdf.save()
+        buffer.seek(0)
+
+        # Base64 para preview
+        import base64
+        pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+        return jsonify({
+            'success': True,
+            'pdf_base64': pdf_base64,
+            'orgao_licitante': orgao_licitante,
+            'endereco_orgao': endereco_orgao,
+            'message': 'PDF gerado com sucesso'
+        })
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF manual: {e}")
+        return jsonify({'error': f'Erro ao gerar PDF: {str(e)}'}), 500
+
+
+# Nova rota para download do PDF manual (MESMO LAYOUT)
+@app.route('/anexos/download_manual', methods=['POST'])
+@login_required
+def download_anexo_manual():
+    try:
+        data = request.get_json(silent=True) or {}
+        texto_declaracao = data.get('texto_declaracao', '')
+        titulo_declaracao = data.get('titulo_declaracao', 'DECLARAÇÃO')
+        licitacao_id = data.get('licitacao_id', '')
+
+        if not texto_declaracao.strip():
+            return jsonify({'error': 'Texto da declaração não pode estar vazio'}), 400
+
+        empresa = Empresa.query.filter_by(user_id=current_user.id).first()
+        if not empresa:
+            return jsonify({'error': 'Configure sua empresa para gerar documentos'}), 400
+
+        # --- Processar licitacao (igual à outra rota) ---
+        licitacao = None
+        cnpj_licitante = "CNPJ não informado"
+        orgao_licitante = "Órgão não informado"
+        endereco_orgao = "Endereço não informado"
+
+        if licitacao_id and "|" in licitacao_id:
+            tipo, lid = licitacao_id.split("|")
+            lid = int(lid)
+            if tipo == "Produto":
+                licitacao = CalculadoraPasso1.query.filter_by(id=lid).first()
+            elif tipo == "Serviço":
+                licitacao = CalculadoraPasso1Servicos.query.filter_by(id=lid).first()
+            if licitacao:
+                cnpj_licitante = getattr(licitacao, 'cnpj', cnpj_licitante)
+                orgao_licitante = getattr(licitacao, 'razao_social', orgao_licitante)
+                endereco_orgao = getattr(licitacao, 'endereco', endereco_orgao)
+
+        # --- Gerar PDF usando o MESMO renderer ---
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+
+        _render_pdf_declaracao_manual(
+            pdf, empresa, titulo_declaracao, texto_declaracao,
+            licitacao=licitacao,
+            cnpj_licitante=cnpj_licitante,
+            orgao_licitante=orgao_licitante,
+            endereco_orgao=endereco_orgao
+        )
+
+        pdf.save()
+        buffer.seek(0)
+
+        # Nome do arquivo baseado no título
+        nome_arquivo = (
+            titulo_declaracao.replace(' ', '_').replace('/', '_').replace('\\', '_').lower()
+        )
+        if not nome_arquivo.endswith('.pdf'):
+            nome_arquivo += '.pdf'
+
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nome_arquivo,
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF manual para download: {e}")
+        return jsonify({'error': f'Erro ao gerar PDF: {str(e)}'}), 500
+
+
+# ----------------------PAGINA DOCUMENTOS BASICOS -------------------#
+# Importações necessárias para correção de segurança
+from sqlalchemy import and_
+
+
+@app.route('/documentos_basicos', methods=['GET', 'POST'])
+@login_required
+def documentos_basicos():
+    """
+    Rota para listar documentos básicos associados ao usuário principal.
+    """
+    try:
+        # Determinar o usuário principal
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Obter os documentos associados ao usuário principal
+        documentos = (
+            db.session.query(Documento, Subusuario.nome.label('criador_subusuario'), User.nome.label('criador_usuario'))
+            .outerjoin(Subusuario, and_(Documento.subusuario_id == Subusuario.id,
+                                        Subusuario.user_principal_id == user_principal_id))
+            .outerjoin(User, and_(Documento.user_id == User.id, User.id == user_principal_id))
+            .filter(Documento.user_id == user_principal_id)
+            .order_by(Documento.data_atualizacao.desc())
+            .all()
+        )
+
+        # Preparar a lista de documentos para exibição
+        lista_documentos = []
+        hoje = datetime.now().date()
+
+        for documento, criador_subusuario, criador_usuario in documentos:
+            # VALIDAÇÃO ADICIONAL DE SEGURANÇA: Verificar se o documento realmente pertence ao usuário
+            if documento.user_id != user_principal_id:
+                app.logger.error(
+                    f"ALERTA DE SEGURANÇA: Documento {documento.id} não pertence ao usuário {user_principal_id}. Documento pertence ao usuário {documento.user_id}")
+                continue  # Pular este documento
+
+            criador = criador_subusuario or criador_usuario or "Criador desconhecido"
+
+            # Verificar vencimento
+            validade = documento.validade if documento.validade else None
+            dias_para_vencer = (validade - hoje).days if validade else None
+
+            if validade and validade < hoje:
+                status = "vencido"
+                status_texto = "Vencido"
+                classe = "table-danger"  # Linha vermelha
+            elif validade and 0 <= dias_para_vencer <= 7:
+                status = "proximo"
+                status_texto = f"Faltam {dias_para_vencer} dias"
+                classe = "table-warning"  # Linha amarela
+            else:
+                status = "ok"
+                status_texto = "Atualizado"
+                classe = ""  # Sem classe específica
+
+            lista_documentos.append({
+                'id': documento.id,
+                'categoria': documento.categoria,
+                'tipo': documento.tipo,
+                'nome': documento.nome,
+                'validade': validade.strftime('%d/%m/%Y') if validade else 'Não informado',
+                'status': status,
+                'status_texto': status_texto,
+                'classe': classe,
+                'criador': criador,
+                'arquivo': documento.arquivo
+            })
+
+        app.logger.info(f"Documentos carregados para usuário {user_principal_id}: {len(lista_documentos)} documentos")
+
+        # Renderizar o template com a lista de documentos
+        return render_template('documentos_basicos.html', documentos=lista_documentos, now=datetime.now())
+
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar documentos básicos para usuário {current_user.id}: {str(e)}")
+        flash("Erro ao carregar documentos.", "danger")
+        return render_template('documentos_basicos.html', documentos=[], now=datetime.now())
+
+
+@app.route('/api/tipos_documento', methods=['GET'])
+@login_required
+def tipos_documento():
+    """
+    API para buscar tipos de documentos por categoria.
+    """
+    try:
+        categoria = request.args.get('categoria')
+        app.logger.info(f"Categoria recebida na API para usuário {current_user.id}: {categoria}")
+
+        if not categoria:
+            return jsonify({'error': 'Categoria não fornecida'}), 400
+
+        # Lista atualizada de tipos de documentos
+        tipos_por_categoria = {
+            'Fiscal': [
+                'Certidão Negativa de Débitos (CND)',
+                'Certidão de Regularidade do FGTS',
+                'CND do INSS',
+                'Declaração Anual do Simples Nacional (DASN)',
+                'Notas Fiscais Emitidas'
+            ],
+            'Trabalhista': [
+                'Certidão Negativa de Débitos Trabalhistas (CNDT)',
+                'Comprovante de Regularidade Trabalhista',
+                'Registro de Funcionários',
+                'Folha de Pagamento',
+                'Comprovantes de Pagamento do INSS e FGTS'
+            ],
+            'Societário': [
+                'Contrato Social',
+                'Ata de Eleição da Diretoria',
+                'Alterações Contratuais',
+                'Certidão Simplificada da Junta Comercial',
+                'Relatórios Financeiros da Empresa'
+            ],
+            'Outros': [
+                'Declaração de Inexistência de Fatos Impeditivos',
+                'Documentos Diversos',
+                'Procurações',
+                'Declarações de Impostos (IRPJ)',
+                'Certificados de Qualidade (quando aplicável)'
+            ],
+            'Habilitação Jurídica': [
+                'Registro comercial (para empresas individuais)',
+                'Ato constitutivo, estatuto ou contrato social em vigor, com documentos de eleição dos administradores',
+                'Inscrição do ato constitutivo no caso de sociedades civis',
+                'Decreto de autorização (para empresas estrangeiras em funcionamento no Brasil)'
+            ],
+            'Regularidade Fiscal - Federal': [
+                'Prova de inscrição no Cadastro Nacional da Pessoa Jurídica (CNPJ)',
+                'Certidão de regularidade de débitos relativos a tributos federais e à Dívida Ativa da União (PGFN e Receita Federal)',
+                'Certidão Negativa de Débitos Trabalhistas (CNDT)',
+                'Certificado de regularidade do Fundo de Garantia do Tempo de Serviço (FGTS)'
+            ],
+            'Regularidade Fiscal - Estadual': [
+                'Certidão de regularidade fiscal junto à Secretaria da Fazenda do Estado (ICMS, IPVA, ITCMD, entre outros)'
+            ],
+            'Regularidade Fiscal - Municipal': [
+                'Certidão de regularidade fiscal emitida pelo município da sede da empresa (ISS e outros tributos municipais)'
+            ],
+            'Qualificação Técnica': [
+                'Registro ou inscrição na entidade profissional competente (quando aplicável)',
+                'Comprovação de aptidão para a execução do objeto da licitação',
+                'Indicação de instalações e aparelhamento disponíveis para realização do objeto'
+            ],
+            'Qualificação Econômico-Financeira': [
+                'Balanço patrimonial e demonstrações contábeis do último exercício',
+                'Certidão negativa de falência, recuperação judicial ou insolvência',
+                'Garantia de proposta (se prevista no edital)'
+            ],
+            'Documentos Específicos': [
+                'Outros documentos exigidos conforme peculiaridades do objeto da licitação'
+            ]
+        }
+
+        tipos = tipos_por_categoria.get(categoria, [])
+        return jsonify({'tipos': tipos, 'categorias': list(tipos_por_categoria.keys())})
+
+    except Exception as e:
+        app.logger.error(f"Erro ao buscar tipos de documentos para usuário {current_user.id}: {str(e)}")
+        return jsonify({'error': 'Erro interno'}), 500
+
+
+@app.route('/documentos_basicos/excluir/<int:documento_id>', methods=['DELETE'])
+@login_required
+def excluir_documento(documento_id):
+    """
+    Exclui um documento, garantindo que pertence ao usuário correto.
+    """
+    try:
+        # Determinar o usuário principal
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Buscar o documento garantindo que pertence ao usuário principal
+        documento = Documento.query.filter_by(id=documento_id, user_id=user_principal_id).first()
+        if not documento:
+            app.logger.warning(
+                f"Tentativa de exclusão de documento inexistente ou não autorizada. Documento ID: {documento_id}, Usuário: {current_user.id}")
+            return jsonify({'error': 'Documento não encontrado ou acesso negado.'}), 404
+
+        # Remover arquivo físico se existir
+        if documento.arquivo:
+            arquivo_path = os.path.join(app.config['UPLOAD_FOLDER'], documento.arquivo)
+            if os.path.exists(arquivo_path):
+                try:
+                    os.remove(arquivo_path)
+                    app.logger.info(f"Arquivo {arquivo_path} removido com sucesso.")
+                except OSError as e:
+                    app.logger.warning(f"Erro ao remover arquivo {arquivo_path}: {e}")
+
+        # Remover do banco de dados
+        db.session.delete(documento)
+        db.session.commit()
+
+        app.logger.info(f"Documento {documento_id} excluído com sucesso pelo usuário {current_user.id}")
+        return jsonify({'success': 'Documento excluído com sucesso!'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao excluir documento {documento_id} para usuário {current_user.id}: {e}")
+        return jsonify({'error': 'Erro interno ao excluir documento.'}), 500
+
+
+@app.route('/documentos_basicos/download_selecionados', methods=['POST'])
+@login_required
+def download_selecionados():
+    """
+    Gera PDF consolidado com documentos selecionados do usuário.
+    """
+    try:
+        documento_ids = request.form.getlist('documentos[]')
+        if not documento_ids:
+            flash("Nenhum documento selecionado.", "warning")
+            return redirect(url_for('documentos_basicos'))
+
+        # Determinar o usuário principal
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Buscar documentos garantindo que pertencem ao usuário principal
+        documentos = Documento.query.filter(
+            Documento.id.in_(documento_ids),
+            Documento.user_id == user_principal_id
+        ).all()
+
+        if not documentos:
+            flash("Nenhum documento encontrado para os IDs selecionados.", "danger")
+            return redirect(url_for('documentos_basicos'))
+
+        input_dir = app.config['UPLOAD_FOLDER']
+        output_dir = app.config['UPLOAD_FOLDER']
+
+        # Gerar nome único para o consolidado
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        output_path = os.path.join(output_dir, f'documentos_consolidados_{current_user.id}_{timestamp}.pdf')
+
+        merger = PdfMerger()
+        documentos_adicionados = 0
+
+        for doc in documentos:
+            file_path = os.path.join(input_dir, doc.arquivo)
+
+            if not os.path.exists(file_path):
+                app.logger.warning(f"Arquivo não encontrado: {file_path}")
+                continue
+            if not file_path.lower().endswith('.pdf'):
+                app.logger.warning(f"Arquivo não é PDF válido: {file_path}")
+                continue
+
+            try:
+                merger.append(file_path)
+                documentos_adicionados += 1
+                app.logger.info(f"Arquivo {file_path} adicionado ao consolidado")
+            except Exception as e:
+                app.logger.error(f"Erro ao adicionar arquivo {file_path}: {e}")
+                continue
+
+        if documentos_adicionados == 0:
+            merger.close()
+            flash("Nenhum documento válido encontrado para consolidar.", "danger")
+            return redirect(url_for('documentos_basicos'))
+
+        merger.write(output_path)
+        merger.close()
+
+        app.logger.info(f"PDF consolidado gerado com sucesso: {output_path}")
+
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name=f"documentos_consolidados_{timestamp}.pdf",
+            mimetype="application/pdf"
+        )
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF consolidado para usuário {current_user.id}: {e}")
+        flash("Erro interno ao gerar o PDF consolidado.", "danger")
+        return redirect(url_for('documentos_basicos'))
+
+
+@app.route('/documentos_basicos/upload', methods=['POST'])
+@login_required
+def upload_documento():
+    """
+    Faz upload de um novo documento para o usuário.
+    """
+    try:
+        categoria = request.form.get('categoria', '').strip()
+        tipo = request.form.get('tipo', '').strip()
+        nome = request.form.get('nome', '').strip()
+        validade = request.form.get('validade', '').strip()
+        arquivo = request.files.get('arquivo')
+
+        # Validações de entrada
+        if not all([categoria, tipo, nome, validade, arquivo]):
+            flash("Todos os campos obrigatórios devem ser preenchidos.", "danger")
+            return redirect(url_for('documentos_basicos'))
+
+        if arquivo.filename == '':
+            flash("Nenhum arquivo foi selecionado.", "danger")
+            return redirect(url_for('documentos_basicos'))
+
+        # Validar extensão do arquivo
+        extensoes_permitidas = {'pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'}
+        extensao = arquivo.filename.rsplit('.', 1)[1].lower() if '.' in arquivo.filename else ''
+
+        if extensao not in extensoes_permitidas:
+            flash("Formato de arquivo não permitido. Use: PDF, DOC, DOCX, JPG, JPEG ou PNG.", "danger")
+            return redirect(url_for('documentos_basicos'))
+
+        # Determinar o usuário principal
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Gerar nome único para o arquivo
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        filename = f"{timestamp}_{secure_filename(arquivo.filename)}"
+        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+        # Garantir que o diretório existe
+        os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+
+        # Salvar o arquivo
+        arquivo.save(upload_path)
+
+        # Criar o documento no banco de dados
+        documento = Documento(
+            categoria=categoria,
+            tipo=tipo,
+            nome=nome,
+            validade=datetime.strptime(validade, '%Y-%m-%d'),
+            arquivo=filename,
+            user_id=user_principal_id,
+            subusuario_id=current_user.id if session.get('user_type') == 'subusuario' else None,
+            status="enviado",
+            data_atualizacao=datetime.now()
+        )
+
+        db.session.add(documento)
+        db.session.commit()
+
+        app.logger.info(f"Documento {nome} enviado com sucesso pelo usuário {current_user.id}")
+        flash("Documento enviado com sucesso!", "success")
+        return redirect(url_for('documentos_basicos'))
+
+    except ValueError as e:
+        app.logger.error(f"Erro de validação ao enviar documento para usuário {current_user.id}: {e}")
+        flash("Data de validade inválida. Use o formato correto.", "danger")
+        return redirect(url_for('documentos_basicos'))
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao enviar documento para usuário {current_user.id}: {e}")
+        flash(f"Erro ao enviar documento: {str(e)}", "danger")
+        return redirect(url_for('documentos_basicos'))
+
+
+@app.route('/notificar_documentos', methods=['GET'])
+@login_required
+def notificar_documentos():
+    """
+    Envia notificações por email sobre documentos próximos do vencimento.
+    """
+    try:
+        # Determinar o usuário principal
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Buscar documentos próximos do vencimento ou vencidos do usuário principal
+        hoje = datetime.now().date()
+        documentos = Documento.query.filter(
+            Documento.user_id == user_principal_id,
+            Documento.validade.isnot(None),
+            Documento.validade <= hoje + timedelta(days=7)
+        ).all()
+
+        if not documentos:
+            flash("Nenhum documento próximo do vencimento encontrado.", "info")
+            return redirect(url_for('documentos_basicos'))
+
+        # Buscar dados do usuário principal
+        user = User.query.get(user_principal_id)
+        if not user or not user.email:
+            flash("Email do usuário não encontrado.", "danger")
+            return redirect(url_for('documentos_basicos'))
+
+        emails_enviados = 0
+        for documento in documentos:
+            status = "próximo do vencimento" if documento.validade > hoje else "vencido"
+
+            try:
+                msg = Message(
+                    f"Alerta de Documento {status}",
+                    sender=app.config['MAIL_USERNAME'],
+                    recipients=[user.email],
+                )
+                msg.body = f"""
+Olá, {user.nome}!
+
+O documento "{documento.nome}" ({documento.tipo}) está {status}.
+Data de validade: {documento.validade.strftime('%d/%m/%Y')}.
+
+Por favor, tome as devidas providências.
+
+Acesse o sistema em: https://precificaja.com/precificaja/login
+
+Atenciosamente,
+Equipe PrecifiqueJá
+                """
+                mail.send(msg)
+                emails_enviados += 1
+                app.logger.info(f"E-mail enviado para {user.email} sobre o documento {documento.nome}.")
+            except Exception as e:
+                app.logger.error(f"Erro ao enviar e-mail para {user.email} sobre documento {documento.nome}: {e}")
+
+        if emails_enviados > 0:
+            flash(f"Notificações enviadas com sucesso! ({emails_enviados} emails)", "success")
+        else:
+            flash("Erro ao enviar notificações.", "danger")
+
+    except Exception as e:
+        app.logger.error(f"Erro ao notificar documentos para usuário {current_user.id}: {e}")
+        flash("Erro ao enviar notificações.", "danger")
+
+    return redirect(url_for('documentos_basicos'))
+
+
+@app.route('/documentos_basicos/atualizar', methods=['POST'])
+@login_required
+def atualizar_documento():
+    """
+    Atualiza um documento existente com nova validade e arquivo.
+    """
+    try:
+        documento_id = request.form.get('documento_id')
+        validade = request.form.get('validade')
+        arquivo = request.files.get('arquivo')
+
+        # Validações de entrada
+        if not documento_id or not validade:
+            flash('ID do documento e validade são obrigatórios.', 'danger')
+            return redirect(url_for('documentos_basicos'))
+
+        if not arquivo or arquivo.filename == '':
+            flash('É obrigatório enviar um novo arquivo ao atualizar o documento.', 'danger')
+            return redirect(url_for('documentos_basicos'))
+
+        # Determinar o usuário principal
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Buscar o documento garantindo que pertence ao usuário principal
+        documento = Documento.query.filter_by(id=documento_id, user_id=user_principal_id).first()
+        if not documento:
+            flash('Documento não encontrado ou acesso negado.', 'danger')
+            return redirect(url_for('documentos_basicos'))
+
+        # Validar extensão do novo arquivo
+        extensoes_permitidas = {'pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'}
+        extensao = arquivo.filename.rsplit('.', 1)[1].lower() if '.' in arquivo.filename else ''
+
+        if extensao not in extensoes_permitidas:
+            flash("Formato de arquivo não permitido. Use: PDF, DOC, DOCX, JPG, JPEG ou PNG.", "danger")
+            return redirect(url_for('documentos_basicos'))
+
+        # Excluir o arquivo antigo
+        caminho_antigo = os.path.join(app.config['UPLOAD_FOLDER'], documento.arquivo)
+        if os.path.exists(caminho_antigo):
+            try:
+                os.remove(caminho_antigo)
+                app.logger.info(f"Arquivo antigo {caminho_antigo} excluído com sucesso.")
+            except OSError as e:
+                app.logger.warning(f"Erro ao excluir arquivo antigo {caminho_antigo}: {e}")
+
+        # Criar novo nome de arquivo para evitar conflito
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        filename = f"{timestamp}_{secure_filename(arquivo.filename)}"
+        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+        # Garantir que o diretório existe
+        os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+
+        # Salvar o novo arquivo
+        arquivo.save(upload_path)
+
+        # Atualizar no banco de dados
+        documento.validade = datetime.strptime(validade, '%Y-%m-%d')
+        documento.arquivo = filename
+        documento.data_atualizacao = datetime.now()
+
+        db.session.commit()
+
+        app.logger.info(f"Documento {documento_id} atualizado com sucesso pelo usuário {current_user.id}")
+        flash('Documento atualizado com sucesso!', 'success')
+
+    except ValueError as e:
+        app.logger.error(f"Erro de validação ao atualizar documento {documento_id} para usuário {current_user.id}: {e}")
+        flash('Data de validade inválida. Use o formato correto.', 'danger')
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao atualizar documento {documento_id} para usuário {current_user.id}: {e}")
+        flash('Erro ao atualizar documento.', 'danger')
+
+    return redirect(url_for('documentos_basicos'))
+
+
+@app.route('/documentos_basicos/download/<int:documento_id>')
+@login_required
+def download_documento(documento_id):
+    """
+    Faz download de um documento específico.
+    """
+    try:
+        # Determinar o usuário principal
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Buscar o documento garantindo que pertence ao usuário principal
+        documento = Documento.query.filter_by(id=documento_id, user_id=user_principal_id).first()
+        if not documento:
+            app.logger.warning(
+                f"ALERTA DE SEGURANÇA: Tentativa de acesso não autorizado ao documento {documento_id} pelo usuário {current_user.id}")
+            flash('Documento não encontrado ou acesso negado.', 'danger')
+            return redirect(url_for('documentos_basicos'))
+
+        # VALIDAÇÃO ADICIONAL DE SEGURANÇA
+        if documento.user_id != user_principal_id:
+            app.logger.error(
+                f"ALERTA DE SEGURANÇA CRÍTICO: Documento {documento_id} não pertence ao usuário {user_principal_id}. Tentativa de acesso por usuário {current_user.id}")
+            flash('Acesso negado por motivos de segurança.', 'danger')
+            return redirect(url_for('documentos_basicos'))
+
+        arquivo_path = os.path.join(app.config['UPLOAD_FOLDER'], documento.arquivo)
+        if not os.path.exists(arquivo_path):
+            flash('Arquivo não encontrado no servidor.', 'danger')
+            return redirect(url_for('documentos_basicos'))
+
+        app.logger.info(f"Download do documento {documento_id} realizado pelo usuário {current_user.id}")
+
+        return send_file(
+            arquivo_path,
+            as_attachment=True,
+            download_name=f"{documento.nome}.{documento.arquivo.split('.')[-1]}",
+            mimetype="application/octet-stream"
+        )
+
+    except Exception as e:
+        app.logger.error(f"Erro ao fazer download do documento {documento_id} para usuário {current_user.id}: {e}")
+        flash('Erro ao fazer download do documento.', 'danger')
+        return redirect(url_for('documentos_basicos'))
+
+
+@app.route('/gerar_catalogo_completo', methods=['POST'])
+@login_required
+def gerar_catalogo_completo():
+    """Gera catálogo PDF com todos os produtos - CORRIGIDA COM EAGER LOADING"""
+    try:
+        current_app.logger.info(f"Gerando catálogo completo para usuário {current_user.id}")
+
+        # CORREÇÃO: Fazer eager loading do relacionamento detalhes_rel
+        produtos = ProdutosFornecedores.query.options(
+            db.joinedload(ProdutosFornecedores.detalhes_rel)
+        ).filter_by(user_id=current_user.id).order_by(ProdutosFornecedores.nome).all()
+
+        if not produtos:
+            flash("Nenhum produto encontrado para gerar catálogo.", "warning")
+            return redirect(url_for('listar_produtos_fornecedores'))
+
+        # Buscar fornecedores
+        fornecedores = FornecedorProdutos.query.filter_by(user_id=current_user.id).all()
+        fornecedores_dict = {f.id: f.nome_empresa for f in fornecedores}
+
+        # Gerar PDF
+        filename = f"catalogo_completo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filepath = os.path.join(tempfile.gettempdir(), filename)
+
+        current_app.logger.info(f"Gerando PDF com {len(produtos)} produtos")
+
+        gerar_pdf_catalogo_melhorado(produtos, fornecedores_dict, filepath,
+                                     f"Catálogo Completo de Produtos ({len(produtos)} itens)")
+
+        # Retornar URL para download
+        download_url = url_for("download_catalogo_temp", filename=filename, _external=True)
+        return jsonify({"success": True, "download_url": download_url,
+                        "message": f"Catálogo gerado com {len(produtos)} produtos!"})
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao gerar catálogo completo: {e}")
+        return jsonify({"success": False, "error": f"Erro ao gerar catálogo: {str(e)}"})
+
+
+# SUBSTITUA A FUNÇÃO INTEIRA EM app.py
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.platypus import Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader, simpleSplit
+from urllib.request import urlopen
+from io import BytesIO
+import base64, os
+
+
+@app.route('/simulacao/<int:registro_id>/composicao_custo_pdf')
+@login_required
+def gerar_composicao_custo_pdf(registro_id):
+    """
+    Gera um relatório PDF detalhado da composição de custo com layout padronizado,
+    prevenindo estouro de página/linhas muito altas e garantindo que a tabela
+    pagine com cabeçalho repetido.
+    """
+    try:
+        # --- 1) BUSCA DE DADOS ---
+        user_principal_id = current_user.user_principal_id if session.get(
+            'user_type') == 'subusuario' else current_user.id
+        registro = CalculadoraPasso1.query.filter_by(id=registro_id, user_id=user_principal_id).first_or_404()
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        produtos = Produto.query.filter_by(calculadora_passo1_id=registro.id).order_by(Produto.id.asc()).all()
+
+        if not empresa:
+            flash("Configure os dados da sua empresa para gerar relatórios.", "danger")
+            return redirect(url_for('simulacao'))
+        if not produtos:
+            flash("Não há produtos nesta simulação para gerar o relatório.", "warning")
+            return redirect(url_for('simulacao'))
+
+        # --- 2) CONFIG PDF + HELPERS ---
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        MARGIN_X, MARGIN_Y = 50, 50
+        CONTENT_WIDTH = width - 2 * MARGIN_X
+        y = height - MARGIN_Y
+
+        # BRL format
+        def brl(v):
+            try:
+                n = float(v or 0)
+                return "R$ " + f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return "R$ 0,00"
+
+        # quebra de "palavrões" (URLs/códigos) — injeta ZWSP a cada N chars sem espaço
+        def inject_zwsp(s, max_run=24):
+            if not s:
+                return s
+            out, run = [], 0
+            for ch in s:
+                if ch.isspace():
+                    run = 0
+                    out.append(ch)
+                else:
+                    run += 1
+                    out.append(ch)
+                    if run >= max_run:
+                        out.append("\u200b")
+                        run = 0
+            return "".join(out)
+
+        # resolve logo (base64, URL, caminho absoluto/relativo)
+        def get_logo_source(logo_value):
+            if not logo_value:
+                return None
+            try:
+                if isinstance(logo_value, (bytes, bytearray)):
+                    return BytesIO(logo_value)
+
+                s = str(logo_value).strip()
+                if s.startswith("data:image"):
+                    return BytesIO(base64.b64decode(s.split(",", 1)[1]))
+                if s.startswith(("http://", "https://")):
+                    with urlopen(s, timeout=5) as r:
+                        return BytesIO(r.read())
+
+                base_path = current_app.root_path
+                candidates = [
+                    s,
+                    os.path.join(base_path, s.lstrip('/')),
+                    os.path.join(current_app.static_folder, s.lstrip('/')),
+                ]
+                if '/home/precificaja/apps_wsgi/precificaja/' in s:
+                    clean = s.split('/home/precificaja/apps_wsgi/precificaja/')[-1]
+                    candidates.append(os.path.join(base_path, clean))
+
+                for path in candidates:
+                    if os.path.exists(path) and os.path.isfile(path):
+                        return path
+
+                app.logger.warning(f"[logo] Arquivo não encontrado: {s}")
+                return None
+            except Exception as e:
+                app.logger.error(f"[logo] Erro ao carregar fonte da logo: {e}")
+                return None
+
+        logo_source = get_logo_source(getattr(empresa, 'logo', None))
+
+        def desenha_marca_dagua():
+            if not logo_source:
+                return
+            try:
+                pdf.saveState()
+                try:
+                    pdf.setFillAlpha(0.08)
+                except Exception:
+                    pass
+                logo = ImageReader(logo_source)
+                pdf.drawImage(logo, width / 4, height / 3, width=300, height=150, mask='auto', preserveAspectRatio=True)
+                pdf.restoreState()
+            except Exception as e:
+                app.logger.warning(f"Marca d'água não pôde ser carregada: {e}")
+
+        def verifica_espaco(altura_necessaria):
+            nonlocal y
+            if y - altura_necessaria < MARGIN_Y:
+                pdf.showPage()
+                desenha_marca_dagua()
+                y = height - MARGIN_Y
+                return True
+            return False
+
+        # --- 3) CABEÇALHO DO RELATÓRIO ---
+        def desenha_cabecalho_relatorio():
+            nonlocal y
+            if logo_source:
+                try:
+                    logo = ImageReader(logo_source)
+                    pdf.drawImage(logo, MARGIN_X, y - 50, width=120, height=50, preserveAspectRatio=True, mask='auto')
+                except Exception:
+                    pass
+
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.drawRightString(width - MARGIN_X, y - 20, "Relatório de Composição de Custo")
+            pdf.setFont("Helvetica", 9)
+            pdf.drawRightString(width - MARGIN_X, y - 35,
+                                f"Simulação ID: #{registro.id} | Processo: {registro.numero_processo or '—'}")
+            pdf.drawRightString(width - MARGIN_X, y - 50, f"Gerado em: {datetime.now().strftime('%d/%m/%Y')}")
+            y -= 70
+
+            pdf.setStrokeColorRGB(0.8, 0.8, 0.8)
+            pdf.line(MARGIN_X, y, width - MARGIN_X, y)
+            y -= 30
+
+            pdf.setFont("Helvetica-Bold", 11)
+            pdf.drawString(MARGIN_X, y, "Dados da Simulação")
+            y -= 20
+            pdf.setFont("Helvetica", 9)
+            pdf.drawString(MARGIN_X, y, f"CLIENTE: {registro.razao_social or '—'}");
+            y -= 15
+            pdf.drawString(MARGIN_X, y, f"CNPJ: {registro.cnpj or '—'}");
+            y -= 15
+            pdf.drawString(MARGIN_X, y, f"ENDEREÇO: {registro.endereco or '—'}");
+            y -= 30
+
+        # --- 4) TABELA DE CUSTOS (com paginação e quebra de células longas) ---
+        def desenha_tabela_custos():
+            nonlocal y
+
+            styles = getSampleStyleSheet()
+            style_head = ParagraphStyle('Head', parent=styles['BodyText'], alignment=TA_LEFT, leading=12, fontSize=10)
+            style_cell = ParagraphStyle('Cell', parent=styles['BodyText'], alignment=TA_LEFT, leading=10, fontSize=8,
+                                        wordWrap='CJK', splitLongWords=1)
+
+            header = [
+                Paragraph("<b>#</b>", style_head),
+                Paragraph("<b>Produto</b>", style_head),
+                Paragraph("<b>Qtd</b>", style_head),
+                Paragraph("<b>Custo Un.</b>", style_head),
+                Paragraph("<b>Custo Total</b>", style_head),
+                Paragraph("<b>Venda Un.</b>", style_head),
+                Paragraph("<b>Venda Total</b>", style_head),
+                Paragraph("<b>Margem (R$)</b>", style_head),
+                Paragraph("<b>Margem (%)</b>", style_head),
+            ]
+
+            # larguras proporcionais = somam 100% do conteúdo
+            col_fracs = [0.05, 0.32, 0.06, 0.10, 0.12, 0.10, 0.12, 0.09, 0.04]
+            col_widths = [CONTENT_WIDTH * f for f in col_fracs]
+
+            # util: quebra a coluna de produto em segmentos para evitar uma única linha gigante
+            def split_into_segments(text, col_w, max_lines=45):
+                text = inject_zwsp((text or "").strip())
+                if not text:
+                    return [Paragraph("", style_cell)]
+
+                usable_w = max(col_w - 12, col_w * 0.9)  # desconta paddings
+                lines = simpleSplit(text, style_cell.fontName, style_cell.fontSize, usable_w)
+
+                if len(lines) <= max_lines:
+                    return [Paragraph(text, style_cell)]
+
+                segs, buf = [], []
+                for ln in lines:
+                    buf.append(ln)
+                    if len(buf) >= max_lines:
+                        segs.append(Paragraph("<br/>".join(buf), style_cell))
+                        buf = []
+                if buf:
+                    segs.append(Paragraph("<br/>".join(buf), style_cell))
+                return segs
+
+            # monta todas as linhas (com possíveis "continuações")
+            all_rows = []
+            for p in produtos:
+                qtd = float(p.quantidade or 0)
+                c_un = float(p.custo or 0.0)
+                v_un = float(p.venda or 0.0)
+                c_tot = qtd * c_un
+                v_tot = qtd * v_un
+                margem_rs = v_tot - c_tot
+                margem_pct = (margem_rs / v_tot * 100.0) if v_tot > 0 else 0.0
+
+                prod_segs = split_into_segments(p.nome or "", col_widths[1], max_lines=45)
+                n = len(prod_segs)
+
+                for idx in range(n):
+                    if idx == 0:
+                        row = [
+                            Paragraph(str(p.numero_item or p.id), style_cell),
+                            prod_segs[idx],
+                            Paragraph(f"{qtd:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), style_cell),
+                            Paragraph(brl(c_un), style_cell),
+                            Paragraph(brl(c_tot), style_cell),
+                            Paragraph(brl(v_un), style_cell),
+                            Paragraph(brl(v_tot), style_cell),
+                            Paragraph(brl(margem_rs), style_cell),
+                            Paragraph(f"{margem_pct:.2f}%".replace(".", ","), style_cell),
+                        ]
+                    else:
+                        row = [
+                            Paragraph("", style_cell),
+                            prod_segs[idx],
+                            Paragraph("", style_cell),
+                            Paragraph("", style_cell),
+                            Paragraph("", style_cell),
+                            Paragraph("", style_cell),
+                            Paragraph("", style_cell),
+                            Paragraph("", style_cell),
+                            Paragraph("", style_cell),
+                        ]
+                    all_rows.append(row)
+
+            # estilos da tabela
+            base_style = TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0056b3")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+
+                # alinhamentos por coluna
+                ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # #
+                ('ALIGN', (1, 1), (1, -1), 'LEFT'),  # Produto
+                ('ALIGN', (2, 1), (2, -1), 'RIGHT'),  # Qtd
+                ('ALIGN', (3, 1), (-1, -1), 'RIGHT'),  # todos os valores à direita
+                ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ])
+
+            zebra = TableStyle([('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7F7F7")])])
+
+            # Paginação: empacota linhas em blocos que caibam no espaço restante,
+            # repetindo o cabeçalho em cada bloco.
+            chunk_rows = []
+
+            def draw_chunk(rows):
+                nonlocal y
+                if not rows:
+                    return
+                t = Table([header] + rows, colWidths=col_widths, repeatRows=1)
+                t.setStyle(base_style)
+                t.setStyle(zebra)
+                w, h = t.wrapOn(pdf, CONTENT_WIDTH, height)
+                if y - h < MARGIN_Y:
+                    pdf.showPage();
+                    desenha_marca_dagua();
+                    y = height - MARGIN_Y
+                t.drawOn(pdf, MARGIN_X, y - h)
+                y -= (h + 25)
+
+            for row in all_rows:
+                test = Table([header] + chunk_rows + [row], colWidths=col_widths, repeatRows=1)
+                test.setStyle(base_style)
+                test.setStyle(zebra)
+                _, htest = test.wrapOn(pdf, CONTENT_WIDTH, height)
+
+                if y - htest < MARGIN_Y:
+                    # desenha o que já cabe e começa nova página/bloco
+                    draw_chunk(chunk_rows)
+                    chunk_rows = [row]
+                else:
+                    chunk_rows.append(row)
+
+            # último bloco
+            draw_chunk(chunk_rows)
+
+        # --- 5) RESUMO FINANCEIRO E ASSINATURA (mantidos, com verificação de espaço) ---
+        def desenha_resumo_financeiro():
+            nonlocal y
+            custo_produtos = sum((p.custo or 0) * (p.quantidade or 0) for p in produtos)
+            frete = float(registro.frete or 0)
+            custo_direto_total = custo_produtos + frete
+            receita_total = sum((p.venda or 0) * (p.quantidade or 0) for p in produtos)
+            imposto_percent = float(empresa.imposto_venda or 0)
+            imposto_valor = receita_total * (imposto_percent / 100.0)
+            custo_total_geral = custo_direto_total + imposto_valor
+            lucro_liquido = receita_total - custo_total_geral
+            margem_liquida = (lucro_liquido / receita_total * 100) if receita_total > 0 else 0
+
+            verifica_espaco(200)
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(MARGIN_X, y, "Resumo Financeiro da Operação")
+            y -= 25
+
+            box_x = MARGIN_X
+            box_w = CONTENT_WIDTH
+            box_h = 160
+            pdf.setStrokeColorRGB(0.9, 0.9, 0.9)
+            pdf.setFillColorRGB(0.98, 0.98, 0.98)
+            pdf.rect(box_x, y - box_h, box_w, box_h, fill=1, stroke=1)
+            pdf.setFillColorRGB(0, 0, 0)
+
+            line_y = y - 20
+            line_h = 20
+            data = [
+                ("Receita Total (Venda)", brl(receita_total), colors.green),
+                ("Custo dos Produtos", f"- {brl(custo_produtos)}", colors.red),
+                ("Custo de Frete", f"- {brl(frete)}", colors.red),
+                (f"Impostos ({imposto_percent:.2f}%)", f"- {brl(imposto_valor)}", colors.orange),
+            ]
+
+            pdf.setFont("Helvetica", 10)
+            for label, value, color in data:
+                pdf.setFillColor(colors.black);
+                pdf.drawString(box_x + 15, line_y, label)
+                pdf.setFillColor(color);
+                pdf.drawRightString(box_x + box_w - 15, line_y, value)
+                line_y -= line_h
+
+            line_y -= 5
+            pdf.setStrokeColorRGB(0.7, 0.7, 0.7)
+            pdf.line(box_x + 10, line_y, box_x + box_w - 10, line_y)
+            line_y -= 15
+
+            pdf.setFont("Helvetica-Bold", 11);
+            pdf.setFillColor(colors.black)
+            pdf.drawString(box_x + 15, line_y, "Lucro Líquido")
+            pdf.drawRightString(box_x + box_w - 15, line_y, brl(lucro_liquido))
+            line_y -= line_h
+
+            pdf.setFont("Helvetica-Bold", 10);
+            pdf.setFillColor(colors.darkblue)
+            pdf.drawString(box_x + 15, line_y, "Margem Líquida")
+            pdf.drawRightString(box_x + box_w - 15, line_y, f"{margem_liquida:.2f}%".replace(".", ","))
+
+            y -= (box_h + 30)
+
+        def desenha_assinatura():
+            nonlocal y
+            verifica_espaco(80)
+            assinatura_x = (width / 2)
+            y -= 30
+            pdf.line(assinatura_x - 125, y, assinatura_x + 125, y)
+            y -= 15
+            pdf.setFont("Helvetica", 9)
+            pdf.drawCentredString(assinatura_x, y, empresa.nome_socio or "_________________________")
+            y -= 12
+            pdf.setFont("Helvetica", 8)
+            pdf.drawCentredString(assinatura_x, y, empresa.razao_social or "")
+
+        # --- 6) MONTAGEM ---
+        desenha_marca_dagua()
+        desenha_cabecalho_relatorio()
+        desenha_tabela_custos()
+        desenha_resumo_financeiro()
+        desenha_assinatura()
+
+        pdf.save()
+        buffer.seek(0)
+        return send_file(buffer, as_attachment=True, download_name=f'composicao_custo_{registro_id}.pdf',
+                         mimetype='application/pdf')
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF de composição de custo: {e}", exc_info=True)
+        flash("Ocorreu um erro ao gerar o relatório de custo.", "danger")
+        return redirect(url_for('simulacao'))
+
+
+# ----------------------PAGINA SIMULADOR DE DISPUTA -------------------#
+# LOCALIZAR ESTA FUNÇÃO (por volta da linha 7378)
+# SUBSTITUA ESTA FUNÇÃO EM app.py
+
+@app.route('/simulacao', methods=['GET'])
+@login_required
+def simulacao():
+    """
+    Exibe os registros da CalculadoraPasso1 para simulação.
+    """
+    try:
+        user_id = current_user.id
+        user_type = session.get('user_type')
+        user_principal_id = (
+            current_user.user_principal_id if user_type == 'subusuario' else user_id
+        )
+
+        if user_type == 'subusuario':
+            registros = CalculadoraPasso1.query.filter_by(subusuario_id=user_id).all()
+        else:
+            subusuarios_ids = [sub.id for sub in current_user.subusuarios]
+            registros = CalculadoraPasso1.query.filter(
+                (CalculadoraPasso1.user_id == current_user.id) |
+                (CalculadoraPasso1.subusuario_id.in_(subusuarios_ids))
+            ).all()
+
+        return render_template('simulacao.html', registros=registros)
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar simulação: {str(e)}")
+        flash("Erro ao carregar a página de simulação.", "danger")
+        # --- CORREÇÃO APLICADA AQUI ---
+        return redirect(url_for('dashboard.dashboard'))
+
+
+# Em app.py
+import unicodedata, re
+from decimal import Decimal
+from sqlalchemy import and_
+
+
+def _normalize(txt: str) -> str:
+    txt = txt or ''
+    txt = unicodedata.normalize('NFKD', txt).encode('ascii', 'ignore').decode('ascii')
+    txt = re.sub(r'[^a-z0-9]+', ' ', txt.lower()).strip()
+    return txt
+
+
+@app.route('/simulacao/<int:registro_id>', methods=['GET'])
+@login_required
+def obter_dados_simulacao(registro_id):
+    """
+    Retorna o registro e seus produtos com resumo.
+    Agora: tenta vincular cada item a ProdutosFornecedores e PERSISTE o vínculo se o campo existir.
+    Todos os valores monetários são convertidos para string para preservar precisão no JSON.
+    """
+    try:
+        user_type = session.get('user_type')
+        user_principal_id = current_user.user_principal_id if user_type == 'subusuario' else current_user.id
+
+        registro = (CalculadoraPasso1.query
+                    .filter(CalculadoraPasso1.id == registro_id,
+                            CalculadoraPasso1.user_id == user_principal_id)
+                    .first_or_404())
+
+        produtos = (Produto.query
+                    .filter_by(calculadora_passo1_id=registro.id)
+                    .order_by(Produto.id.asc())
+                    .all())
+
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        imposto_percentual = Decimal(str(empresa.imposto_venda or '0.0')) if empresa else Decimal('0.0')
+
+        # --------- Pré-carregamento do catálogo do usuário para matching rápido ---------
+        catalogo = ProdutosFornecedores.query.filter_by(user_id=user_principal_id).all()
+        # mapa por nome normalizado -> lista de PF
+        map_por_nome = {}
+        for pf in catalogo:
+            k = _normalize(pf.nome)
+            if not k:
+                continue
+            map_por_nome.setdefault(k, []).append(pf)
+
+        # mapa de detalhes por produto_id (para foto/descrição)
+        pf_ids = [pf.id for pf in catalogo]
+        det_map = {}
+        if pf_ids:
+            for det in ProdutoDetalhes.query.filter(ProdutoDetalhes.produto_id.in_(pf_ids)).all():
+                det_map[det.produto_id] = det
+
+        # Helper: tenta resolver PF para um item da simulação
+        def resolver_pf(prod):
+            # 1) se já tiver o vínculo persistido, usa
+            pf_id = getattr(prod, 'produto_fornecedor_id', None)
+            if pf_id:
+                pf = next((x for x in catalogo if x.id == pf_id), None)
+                if pf:
+                    return pf, True  # encontrado, já persistido
+
+            # 2) matching por nome exato (normalizado)
+            key = _normalize(getattr(prod, 'nome', ''))
+            candidatos = map_por_nome.get(key, []) if key else []
+
+            # 3) se mais de um, tenta afinar com marca/modelo (da simulação e/ou PF)
+            if len(candidatos) > 1:
+                alvo_mm = _normalize(getattr(prod, 'marca_modelo', ''))
+                if alvo_mm:
+                    filtrados = []
+                    for pf in candidatos:
+                        pf_mm = _normalize(f"{pf.marca or ''} {pf.modelo or ''}")
+                        # critério simples: alguma sobreposição de tokens
+                        if any(tok and tok in pf_mm for tok in alvo_mm.split()):
+                            filtrados.append(pf)
+                    if len(filtrados) == 1:
+                        candidatos = filtrados
+
+            # 4) se sobrou exatamente 1, retornamos — e tentamos PERSISTIR se possível
+            if len(candidatos) == 1:
+                pf = candidatos[0]
+                # persiste somente se o atributo existir no modelo
+                if hasattr(prod, 'produto_fornecedor_id'):
+                    try:
+                        prod.produto_fornecedor_id = pf.id
+                        return pf, 'persistir'  # sinaliza que precisamos commit depois
+                    except Exception:
+                        return pf, False
+                return pf, False  # sem atributo no modelo, não persiste
+            return None, False
+
+        # --------- Cálculos de resumo ---------
+        def D(v, default='0.0'):
+            try:
+                return Decimal(str(v if v is not None else default))
+            except Exception:
+                return Decimal(default)
+
+        custo_frete = D(getattr(registro, 'frete', '0.0'))
+        custo_total_produtos = sum(D(p.custo, '0.0') * D(p.quantidade, '0') for p in produtos)
+        valor_venda_total = sum(D(p.venda, '0.0') * D(p.quantidade, '0') for p in produtos)
+
+        imposto_total = valor_venda_total * (imposto_percentual / Decimal('100.0'))
+        lucro_total = valor_venda_total - custo_total_produtos - imposto_total - custo_frete
+
+        # --------- Montagem dos itens + vinculação ---------
+        precisa_commit = False
+        produtos_json = []
+        for p in produtos:
+            pf, estado = resolver_pf(p)
+            if estado == 'persistir':
+                precisa_commit = True
+
+            pf_id = pf.id if pf else getattr(p, 'produto_fornecedor_id', None)
+            det = det_map.get(pf_id) if pf_id else None
+            forn_nm = None
+            if pf and getattr(pf, 'fornecedor', None):
+                forn_nm = pf.fornecedor.nome_empresa
+
+            produtos_json.append({
+                'id': p.id,
+                'numero_item': str(p.numero_item or ""),
+                'nome': p.nome,
+                'marca_modelo': p.marca_modelo,
+                'unidade_medida': str(p.unidade_medida or ""),
+                'custo': str(D(p.custo, '0.00')),
+                'quantidade': p.quantidade or 0,
+                'venda': str(D(p.venda, '0.00')),
+                'frete': str(D(getattr(p, 'frete', None), '0.00')),
+                'url_produto': p.url_produto,
+                'status_item': p.status_item,
+                # ---------- VÍNCULO COM CATÁLOGO ----------
+                'produto_fornecedor_id': pf_id,
+                'produto_fornecedor_nome': pf.nome if pf else None,
+                'fornecedor_nome': forn_nm,
+                'tem_foto': bool(det and det.foto_url),
+                'tem_descricao': bool(det and det.descricao_detalhada),
+            })
+
+        if precisa_commit:
+            db.session.commit()
+
+        return jsonify({
+            'cnpj': registro.cnpj,
+            'razao_social': registro.razao_social,
+            'endereco': registro.endereco,
+            'numero_processo': registro.numero_processo,
+            'validade_proposta': registro.validade_proposta,
+            'prazo_pagamento': registro.prazo_pagamento,
+            'local_entrega': registro.local_entrega,
+            'prazo_entrega': registro.prazo_entrega,
+            'imposto_percentual': str(imposto_percentual),
+            'resumo': {
+                'custo_total': str(custo_total_produtos),
+                'frete': str(custo_frete),
+                'imposto_total': str(imposto_total),
+                'valor_venda_total': str(valor_venda_total),
+                'lucro_total': str(lucro_total),
+            },
+            'produtos': produtos_json
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Erro ao buscar dados de simulação: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+# Em app.py, junto com os outros imports
+# ============================================================================
+# MODIFICAÇÃO NA ROTA: /simulacao/salvar
+# ============================================================================
+# INSTRUÇÕES:
+# Esta é a versão modificada da rota salvar_simulacao
+# Substitua a rota existente em app.py por esta versão
+# ============================================================================
+
+from decimal import Decimal, getcontext
+from flask import request, jsonify, session
+from flask_login import login_required, current_user
+from models import db, CalculadoraPasso1, Produto
+
+getcontext().prec = 15
+
+
+@app.route('/simulacao/salvar', methods=['POST'])
+@login_required
+def salvar_simulacao():
+    """
+    Salva os dados de simulação com suporte a produto_fornecedor_id.
+    """
+    try:
+        data = request.json
+        print(f"\n--- INÍCIO DO SALVAMENTO ---")
+        print(f"[PONTO A] Dados brutos recebidos do JSON: {data}")
+
+        registro_id = data['registro_id']
+        produtos_data = data['produtos']
+        frete_str = str(data.get('frete', '0.0'))
+
+        frete_decimal = Decimal(frete_str)
+        print(f"[PONTO B] Valor do Frete como Decimal: {frete_decimal} (Tipo: {type(frete_decimal)})")
+
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        registro = CalculadoraPasso1.query.filter_by(id=registro_id, user_id=user_principal_id).first()
+        if not registro:
+            return jsonify({'error': 'Registro não encontrado.'}), 404
+
+        # Limpa produtos antigos
+        Produto.query.filter_by(calculadora_passo1_id=registro_id).delete(synchronize_session=False)
+
+        # Itera sobre os produtos para salvar
+        for i, produto_data in enumerate(produtos_data):
+            venda_str = str(produto_data.get('venda', '0.0'))
+            venda_decimal = Decimal(venda_str)
+
+            print(f"\n--- Processando Produto #{i + 1} ---")
+            print(f"[PONTO C] Valor de 'venda' recebido como string: '{venda_str}'")
+            print(f"[PONTO D] Valor de 'venda' convertido para Decimal: {venda_decimal} (Tipo: {type(venda_decimal)})")
+
+            # MODIFICAÇÃO: Capturar produto_fornecedor_id se existir
+            produto_fornecedor_id = produto_data.get('produto_fornecedor_id')
+            if produto_fornecedor_id:
+                try:
+                    produto_fornecedor_id = int(produto_fornecedor_id)
+                except (ValueError, TypeError):
+                    produto_fornecedor_id = None
+
+            novo_produto = Produto(
+                calculadora_passo1_id=registro_id,
+                user_id=user_principal_id,
+                nome=str(produto_data.get('nome', '')).strip(),
+                venda=venda_decimal,
+                numero_item=str(produto_data.get('numero_item', '')).strip(),
+                marca_modelo=str(produto_data.get('marca_modelo', '')).strip(),
+                unidade_medida=str(produto_data.get('unidade_medida', 'UN')).strip(),
+                custo=Decimal(str(produto_data.get('custo', '0.0'))),
+                quantidade=int(produto_data.get('quantidade', 0)),
+                url_produto=str(produto_data.get('url_produto', '')).strip(),
+                status_item=str(produto_data.get('status_item', 'Aguardando')).strip(),
+                produto_fornecedor_id=produto_fornecedor_id  # NOVO CAMPO
+            )
+
+            print(
+                f"[PONTO E] Objeto 'novo_produto.venda' antes de salvar: {novo_produto.venda} (Tipo: {type(novo_produto.venda)})")
+            print(f"[PONTO F] Vínculo com produto_fornecedor_id: {produto_fornecedor_id}")
+            db.session.add(novo_produto)
+
+        registro.frete = frete_decimal
+        db.session.add(registro)
+
+        print("\n[PONTO G] Realizando db.session.commit()")
+        db.session.commit()
+        print("--- FIM DO SALVAMENTO ---\n")
+
+        return jsonify({'success': True, 'message': 'Simulação salva com sucesso!'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao salvar os dados da simulação: {str(e)}")
+        print(f"ERRO NO SALVAMENTO: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# IMPORTS NECESSÁRIOS PARA A ROTA (VERIFIQUE SE ESTÃO NO TOPO DO SEU ARQUIVO)
+# ============================================================================
+import os
+from io import BytesIO
+from datetime import datetime
+from decimal import Decimal, getcontext
+
+from flask import (send_file, flash, redirect, url_for, session,
+                   current_app, request)
+from flask_login import login_required, current_user
+
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
+                                TableStyle, Image, KeepTogether)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+from reportlab.lib.utils import ImageReader
+
+
+# Importe seus modelos do banco de dados (ajuste os nomes se necessário)
+# from .models import CalculadoraPasso1, Empresa, Produto
+
+# ============================================================================
+# ROTA COMPLETA PARA GERAR PDF DE COMPOSIÇÃO DE CUSTO
+# (VERSÃO FINAL CORRIGIDA)
+# ============================================================================
+@app.route('/simulacao/<int:registro_id>/composicao_custo_produtos_pdf')
+@login_required
+def gerar_composicao_custo_produtos_pdf(registro_id):
+    """
+    Gera um relatório PDF detalhado da composição de custo para uma simulação de PRODUTOS.
+    """
+    try:
+        # --- 1. Busca de Dados ---
+        user_principal_id = current_user.user_principal_id if session.get(
+            'user_type') == 'subusuario' else current_user.id
+
+        registro = CalculadoraPasso1.query.filter_by(id=registro_id, user_id=user_principal_id).first_or_404()
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        produtos = Produto.query.filter_by(calculadora_passo1_id=registro.id).order_by(Produto.id.asc()).all()
+
+        if not empresa:
+            flash("Configure os dados da sua empresa para gerar relatórios.", "danger")
+            return redirect(url_for('simulacao'))
+        if not produtos:
+            flash("Não há produtos nesta simulação para gerar o relatório.", "warning")
+            return redirect(url_for('simulacao'))
+
+        # --- 2. Configurações do Documento ---
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4,
+                                topMargin=2 * cm, bottomMargin=2.5 * cm,
+                                leftMargin=2 * cm, rightMargin=2 * cm)
+        story = []
+        styles = getSampleStyleSheet()
+
+        # --- 3. Função de Evento, Helpers e Carregamento de Logo ---
+
+        # CORREÇÃO: Inicializa o caminho (path) e o leitor (reader) do logo
+        logo_path = None
+        logo_reader = None
+
+        if empresa.logo:
+            relative_logo_path = empresa.logo.split('/static/')[-1]
+            full_logo_path = os.path.join(current_app.root_path, 'static', relative_logo_path)
+
+            if os.path.exists(full_logo_path):
+                try:
+                    # Guarda o CAMINHO para o objeto Image e o LEITOR para a marca d'água
+                    logo_path = full_logo_path
+                    logo_reader = ImageReader(full_logo_path)
+                except Exception as e:
+                    app.logger.warning(f"Logo da empresa encontrado mas não pôde ser carregado: {e}")
+            else:
+                app.logger.warning(f"Arquivo de logo não encontrado no caminho construído: {full_logo_path}")
+
+        def on_each_page(canvas, doc):
+            canvas.saveState()
+            if logo_reader:  # A marca d'água continua usando o logo_reader
+                try:
+                    canvas.setFillAlpha(0.08)
+                    canvas.drawImage(logo_reader, doc.leftMargin + (doc.width / 4), doc.height / 3,
+                                     width=300, height=150, mask='auto', preserveAspectRatio=True)
+                except Exception:
+                    pass
+
+            canvas.setFillAlpha(1.0)
+            canvas.setFont('Helvetica', 8)
+            canvas.drawRightString(doc.width + doc.leftMargin, 1.5 * cm, f"Página {doc.page}")
+            canvas.restoreState()
+
+        # 🔹 HELPER PARA EVITAR NOME DE PRODUTO “GIGANTE” ESTOURAR A PÁGINA
+        def sanitizar_nome_produto(nome, max_chars=400):
+            """
+            Limita tamanho e limpa quebras de linha excessivas no nome do produto,
+            para evitar que uma única linha da tabela fique maior que a página.
+            """
+            if not nome:
+                return ""
+            # Remove espaços nas bordas
+            nome = nome.strip()
+            # Normaliza quebras de linha (remove linhas vazias demais)
+            linhas = [linha.strip() for linha in nome.splitlines() if linha.strip()]
+            nome = "\n".join(linhas)
+            # Limita quantidade de caracteres
+            if len(nome) > max_chars:
+                nome = nome[:max_chars] + "..."
+            return nome
+
+        # --- 4. Construção dos "Flowables" (Conteúdo do PDF) ---
+        style_header_title = ParagraphStyle('HeaderTitle', parent=styles['Heading2'], alignment=TA_RIGHT, fontSize=14)
+        style_header_info = ParagraphStyle('HeaderInfo', parent=styles['Normal'], alignment=TA_RIGHT, fontSize=9)
+        style_section_title = ParagraphStyle('SectionTitle', parent=styles['Heading2'], fontSize=11, spaceAfter=8)
+        style_body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=9, leading=12)
+
+        # A. CABEÇALHO DO RELATÓRIO
+        header_elements = []
+        col_widths_header = [doc.width * 0.4, doc.width * 0.6]
+
+        logo_img = Spacer(0, 0)
+        if logo_path:  # CORREÇÃO: Verifica se o CAMINHO do logo existe
+            # CORREÇÃO: Passa o CAMINHO (string) para a classe Image
+            logo_img = Image(logo_path, width=4 * cm, height=2 * cm, hAlign='LEFT')
+
+        header_text_elements = [
+            Paragraph("Relatório de Composição de Custo", style_header_title),
+            Spacer(1, 0.2 * cm),
+            Paragraph(f"Simulação ID: #{registro.id} | Processo: {registro.numero_processo}", style_header_info),
+            Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y')}", style_header_info),
+        ]
+        header_table = Table([[logo_img, header_text_elements]], colWidths=col_widths_header,
+                             style=[('VALIGN', (0, 0), (-1, -1), 'TOP')])
+        header_elements.extend([
+            header_table,
+            Spacer(1, 0.5 * cm),
+            Table([['']], colWidths=[doc.width], style=[('LINEABOVE', (0, 0), (-1, -1), 1, colors.lightgrey)]),
+            Spacer(1, 0.8 * cm),
+            Paragraph("Dados da Simulação", style_section_title),
+            Paragraph(f"<b>CLIENTE:</b> {registro.razao_social}", style_body),
+            Paragraph(f"<b>CNPJ:</b> {registro.cnpj}", style_body),
+            Paragraph(f"<b>ENDEREÇO:</b> {registro.endereco}", style_body),
+        ])
+        story.append(KeepTogether(header_elements))
+        story.append(Spacer(1, 1 * cm))
+
+        # B. TABELA DE CUSTOS DE PRODUTOS
+        style_table_header = ParagraphStyle('TableHeader', parent=styles['Normal'], alignment=TA_CENTER)
+        table_header = [Paragraph(f"<b>{text}</b>", style_table_header) for text in [
+            "#", "Produto", "Qtd", "Custo Un.", "Custo Total", "Venda Un.",
+            "Venda Total", "Margem (R$)", "Margem (%)"
+        ]]
+        table_data = [table_header]
+
+        for p in produtos:
+            custo = Decimal(p.custo or 0)
+            quantidade = Decimal(p.quantidade or 0)
+            venda = Decimal(p.venda or 0)
+            custo_total_item = custo * quantidade
+            venda_total_item = venda * quantidade
+            margem_bruta = venda_total_item - custo_total_item
+            margem_percent = (margem_bruta / venda_total_item * 100) if venda_total_item > 0 else Decimal('0')
+
+            # Usa o nome sanitizado para não estourar página
+            nome_produto = sanitizar_nome_produto(p.nome)
+
+            table_data.append([
+                str(p.numero_item or p.id),
+                Paragraph(nome_produto, styles['Normal']),
+                str(p.quantidade or 0),
+                f"R$ {custo:,.2f}",
+                f"R$ {custo_total_item:,.2f}",
+                f"R$ {venda:,.2f}",
+                f"R$ {venda_total_item:,.2f}",
+                f"R$ {margem_bruta:,.2f}",
+                f"{margem_percent:.2f}%"
+            ])
+
+        col_widths_custos = [doc.width * f for f in [0.05, 0.25, 0.06, 0.11, 0.12, 0.11, 0.12, 0.09, 0.09]]
+        tabela_custos = Table(table_data, colWidths=col_widths_custos, repeatRows=1)
+        tabela_custos.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0056b3")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10), ('TOPPADDING', (0, 0), (-1, 0), 10),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor("#F0F0F0")]),
+            ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey), ('ALIGN', (1, 1), (1, -1), 'LEFT'),
+            ('ALIGN', (3, 1), (-1, -1), 'RIGHT'), ('LEFTPADDING', (1, 1), (1, -1), 5),
+            ('RIGHTPADDING', (2, 1), (-1, -1), 5),
+        ]))
+        story.append(tabela_custos)
+        story.append(Spacer(1, 1 * cm))
+
+        # C. RESUMO FINANCEIRO
+        getcontext().prec = 10
+        custo_produtos = sum(Decimal(p.custo or 0) * Decimal(p.quantidade or 0) for p in produtos)
+        frete = Decimal(registro.frete or 0)
+        receita_total = sum(Decimal(p.venda or 0) * Decimal(p.quantidade or 0) for p in produtos)
+        imposto_percent = Decimal(empresa.imposto_venda or 0)
+        imposto_valor = receita_total * (imposto_percent / Decimal('100'))
+        custo_total_geral = custo_produtos + frete + imposto_valor
+        lucro_liquido = receita_total - custo_total_geral
+        margem_liquida = (lucro_liquido / receita_total * Decimal('100')) if receita_total > 0 else Decimal('0')
+        story.append(Paragraph("Resumo Financeiro da Operação", style_section_title))
+        summary_data = [
+            ['Receita Total (Venda)',
+             Paragraph(f"R$ {receita_total:,.2f}", ParagraphStyle('p', alignment=TA_RIGHT, textColor=colors.green))],
+            ['Custo dos Produtos',
+             Paragraph(f"- R$ {custo_produtos:,.2f}", ParagraphStyle('p', alignment=TA_RIGHT, textColor=colors.red))],
+            ['Custo de Frete',
+             Paragraph(f"- R$ {frete:,.2f}", ParagraphStyle('p', alignment=TA_RIGHT, textColor=colors.red))],
+            [f'Impostos ({imposto_percent:.2f}%)',
+             Paragraph(f"- R$ {imposto_valor:,.2f}", ParagraphStyle('p', alignment=TA_RIGHT, textColor=colors.orange))],
+            [Paragraph("<b>Lucro Líquido</b>", styles['Normal']),
+             Paragraph(f"<b>R$ {lucro_liquido:,.2f}</b>", ParagraphStyle('p', alignment=TA_RIGHT))],
+            [Paragraph("<b>Margem Líquida</b>", styles['Normal']), Paragraph(f"<b>{margem_liquida:.2f}%</b>",
+                                                                             ParagraphStyle('p', alignment=TA_RIGHT,
+                                                                                            textColor=colors.darkblue))],
+        ]
+        summary_table = Table(summary_data, colWidths=[doc.width * 0.7, doc.width * 0.3], style=[
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FAFAFA")),
+            ('BOX', (0, 0), (-1, -1), 1, colors.lightgrey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('LEFTPADDING', (0, 0), (-1, -1), 15),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 15),
+            ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LINEABOVE', (0, 4), (-1, 4), 1, colors.lightgrey), ('TOPPADDING', (0, 4), (-1, 4), 10),
+        ])
+        story.append(summary_table)
+        story.append(Spacer(1, 1.5 * cm))
+
+        # D. ASSINATURA
+        style_assinatura = ParagraphStyle('Assinatura', parent=styles['BodyText'], alignment=TA_CENTER, fontSize=9)
+        story.append(Paragraph("______________________________________", style_assinatura))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(empresa.nome_socio or "Assinatura Autorizada", style_assinatura))
+        story.append(Paragraph(empresa.razao_social, ParagraphStyle('p', parent=style_assinatura, fontSize=8)))
+
+        # --- 5. Geração do PDF ---
+        doc.build(story, onFirstPage=on_each_page, onLaterPages=on_each_page)
+
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f'composicao_custo_produtos_{registro_id}.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar PDF de composição de custo de produtos: {e}", exc_info=True)
+        flash("Ocorreu um erro ao gerar o relatório de custo. Por favor, tente novamente.", "danger")
+        return redirect(url_for('simulacao'))
+
+
+
+# ---------------------- LISTAR SIMULAÇÕES DE SERVIÇOS -------------------#
+@app.route('/simulacao/servicos', methods=['GET'])
+@login_required
+def simulacao_servicos():
+    """
+    Exibe os registros da CalculadoraPasso1Servicos para simulação de serviços.
+    """
+    try:
+        user_id = current_user.id
+        user_type = session.get('user_type')
+        user_principal_id = current_user.user_principal_id if user_type == 'subusuario' else user_id
+
+        if user_type == 'subusuario':
+            registros = CalculadoraPasso1Servicos.query.filter_by(subusuario_id=user_id).all()
+        else:
+            subusuarios_ids = [sub.id for sub in current_user.subusuarios]
+            registros = CalculadoraPasso1Servicos.query.filter(
+                (CalculadoraPasso1Servicos.user_id == current_user.id) |
+                (CalculadoraPasso1Servicos.subusuario_id.in_(subusuarios_ids))
+            ).all()
+
+        return render_template('simulacao_servicos.html', registros=registros)
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar simulação de serviços: {str(e)}")
+        flash("Erro ao carregar a página de simulação de serviços.", "danger")
+        return redirect(url_for('dashboard'))
+
+
+@app.route('/simulacao-servicos/<int:registro_id>', methods=['GET'])
+@login_required
+def obter_dados_simulacao_servicos(registro_id):
+    """
+    Busca os dados vinculados ao CalculadoraPasso1Servicos e seus serviços, incluindo resumo detalhado.
+    ATUALIZADA para incluir cálculo de imposto automático.
+    """
+    try:
+        app.logger.info(f"🔍 Iniciando simulação para registro ID: {registro_id}")
+
+        # ✅ VERIFICAÇÃO ADICIONAL DE AUTENTICAÇÃO
+        if not current_user.is_authenticated:
+            app.logger.error("❌ Usuário não autenticado")
+            return jsonify({"error": "Usuário não autenticado"}), 401
+
+        app.logger.info(f"✅ Usuário autenticado: {current_user.id}")
+
+        # ✅ DETERMINAR USER_ID CORRETO
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        app.logger.info(f"🔍 Buscando registro {registro_id} para usuário {user_principal_id}")
+
+        # ✅ BUSCAR REGISTRO COM TRATAMENTO DE ERRO
+        registro = CalculadoraPasso1Servicos.query.filter_by(
+            id=registro_id,
+            user_id=user_principal_id
+        ).first()
+
+        if not registro:
+            app.logger.error(f"❌ Registro {registro_id} não encontrado para usuário {user_principal_id}")
+            return jsonify({"error": "Registro não encontrado"}), 404
+
+        app.logger.info(f"✅ Registro encontrado: {registro.razao_social}")
+
+        # ✅ BUSCAR EMPRESA E IMPOSTO
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        imposto_percentual = float(empresa.imposto_venda) if empresa and empresa.imposto_venda is not None else 0.0
+        app.logger.info(f"💰 Imposto da empresa: {imposto_percentual}%")
+
+        # ✅ BUSCAR LOTES COM LOGS
+        app.logger.info(f"🔍 Buscando lotes para proposta_servico_id: {registro.id}")
+        lotes = Lote.query.filter_by(proposta_servico_id=registro.id).all()
+        app.logger.info(f"✅ Encontrados {len(lotes)} lotes")
+
+        # Preparar estrutura para lotes e serviços
+        lotes_data = []
+        for lote in lotes:
+            app.logger.info(f"🔍 Processando lote: {lote.nome}")
+            servicos = Servico.query.filter_by(lote_id=lote.id).all()
+            app.logger.info(f"✅ Encontrados {len(servicos)} serviços no lote {lote.nome}")
+
+            lotes_data.append({
+                "id": lote.id,
+                "nome": lote.nome,
+                "servicos": [
+                    {
+                        "id": servico.id,
+                        "nome": servico.nome,
+                        "unidade_medida": servico.unidade_medida,
+                        "quantidade": servico.quantidade,
+                        "custo_unitario": float(servico.custo_unitario),
+                        "valor_venda": float(servico.valor_venda)
+                    }
+                    for servico in servicos
+                ]
+            })
+
+        # ✅ BUSCAR DESPESAS COM LOGS
+        app.logger.info(f"🔍 Buscando despesas para proposta_servico_id: {registro.id}")
+        despesas = Despesa.query.filter_by(proposta_servico_id=registro.id).all()
+        app.logger.info(f"✅ Encontradas {len(despesas)} despesas")
+
+        # ✅ CALCULAR RESUMO COM IMPOSTO
+        custo_total = 0
+        quantidade_total = 0
+        valor_venda_total = 0
+        total_despesas = sum(despesa.valor for despesa in despesas)
+
+        for lote in lotes:
+            for servico in lote.servicos:
+                custo_total += servico.custo_unitario * servico.quantidade
+                quantidade_total += servico.quantidade
+                valor_venda_total += servico.valor_venda * servico.quantidade
+
+        # ✅ CALCULAR IMPOSTO TOTAL
+        imposto_total = valor_venda_total * (imposto_percentual / 100)
+
+        # ✅ CALCULAR LUCRO (Venda - Custo - Despesas - Imposto)
+        lucro_total = valor_venda_total - custo_total - total_despesas - imposto_total
+
+        app.logger.info(
+            f"✅ Cálculos concluídos - Custo: {custo_total}, Venda: {valor_venda_total}, Imposto: {imposto_total}")
+
+        response_data = {
+            "id": registro.id,
+            "cnpj": registro.cnpj,
+            "razao_social": registro.razao_social,
+            "endereco": registro.endereco,
+            "numero_processo": registro.numero_processo,
+            "despesas": [
+                {"id": despesa.id, "descricao": despesa.nome, "valor": float(despesa.valor)}
+                for despesa in despesas
+            ],
+            "lotes": lotes_data,
+            "resumo": {
+                "custo_total": round(custo_total, 2),
+                "quantidade_total": quantidade_total,
+                "valor_venda_total": round(valor_venda_total, 2),
+                "total_despesas": round(total_despesas, 2),
+                "imposto_percentual": imposto_percentual,  # ✅ NOVO CAMPO
+                "imposto_total": round(imposto_total, 2),  # ✅ NOVO CAMPO
+                "lucro_total": round(lucro_total, 2),
+            }
+        }
+
+        app.logger.info(f"✅ Retornando dados da simulação com sucesso")
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        app.logger.error(f"❌ ERRO CRÍTICO na simulação: {str(e)}")
+        app.logger.error(f"❌ Tipo do erro: {type(e).__name__}")
+        import traceback
+        app.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+
+
+@app.route('/simulacao/servicos/remover/<int:servico_id>', methods=['DELETE'])
+def remover_servico(servico_id):
+    print(f"Tentando remover serviço ID: {servico_id}")  # Debug
+
+    servico = db.session.get(Servico, servico_id)
+    if not servico:
+        print("⚠️ Serviço não encontrado no banco")  # Debug
+        return jsonify({'error': 'Serviço não encontrado'}), 404
+
+    db.session.delete(servico)
+    db.session.commit()
+
+    print("✅ Serviço removido com sucesso!")  # Debug
+    return jsonify({'success': True}), 200
+
+
+@app.route('/simulacao/despesas/remover/<int:despesa_id>', methods=['DELETE'])
+def remover_despesa(despesa_id):
+    print(f"Tentando remover despesa ID: {despesa_id}")  # Debug
+
+    # Busca a despesa no banco de dados corretamente
+    despesa = Despesa.query.filter_by(id=despesa_id).first()
+
+    if not despesa:
+        print("⚠️ Despesa não encontrada no banco")  # Debug
+        return jsonify({'error': 'Despesa não encontrada'}), 404
+
+    db.session.delete(despesa)
+    db.session.commit()
+
+    print("✅ Despesa removida com sucesso!")  # Debug
+    return jsonify({'success': True}), 200
+
+
+@app.route('/servicos/relatorio-pdf/<int:registro_id>')
+@login_required
+def gerar_relatorio_pdf_servicos(registro_id):
+    """Gerar relatório PDF completo da proposta de serviços"""
+    try:
+        if isinstance(current_user, Subusuario):
+            user_principal_id = current_user.user_principal_id
+        else:
+            user_principal_id = current_user.id
+
+        # Buscar dados da proposta
+        registro = CalculadoraPasso1.query.filter_by(
+            id=registro_id,
+            user_id=user_principal_id
+        ).first_or_404()
+
+        # Buscar lotes e serviços
+        lotes = Lote.query.filter_by(proposta_id=registro_id).all()
+        despesas = Despesa.query.filter_by(proposta_id=registro_id).all()
+
+        # Calcular totais
+        custo_total = 0
+        venda_total = 0
+
+        for lote in lotes:
+            servicos = Servico.query.filter_by(lote_id=lote.id).all()
+            for servico in servicos:
+                custo_total += servico.custo_unitario * servico.quantidade
+                venda_total += servico.valor_venda * servico.quantidade
+
+        despesas_total = sum(d.valor for d in despesas)
+
+        # Gerar PDF (usando reportlab ou weasyprint)
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        import io
+
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+
+        # Cabeçalho
+        p.drawString(100, 750, f"RELATÓRIO DE CUSTOS - PROPOSTA #{registro_id}")
+        p.drawString(100, 730, f"Cliente: {registro.razao_social}")
+        p.drawString(100, 710, f"CNPJ: {registro.cnpj}")
+
+        # Conteúdo do relatório
+        y = 680
+        p.drawString(100, y, "RESUMO FINANCEIRO:")
+        y -= 20
+        p.drawString(120, y, f"Custo Total: R$ {custo_total:,.2f}")
+        y -= 20
+        p.drawString(120, y, f"Despesas: R$ {despesas_total:,.2f}")
+        y -= 20
+        p.drawString(120, y, f"Valor de Venda: R$ {venda_total:,.2f}")
+        y -= 20
+        p.drawString(120, y, f"Lucro: R$ {venda_total - custo_total - despesas_total:,.2f}")
+
+        p.save()
+        buffer.seek(0)
+
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f'relatorio_proposta_{registro_id}.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        app.logger.error(f"Erro ao gerar relatório PDF: {str(e)}")
+        return jsonify({"error": "Erro ao gerar relatório"}), 500
+
+
+@app.route('/simulacao-servicos/salvar', methods=['POST'])
+@login_required
+def salvar_simulacao_servicos():
+    """
+    Salva as alterações feitas na simulação de serviços.
+    ATUALIZADA para incluir cálculo de imposto.
+    """
+    try:
+        if not current_user.is_authenticated:
+            return jsonify({'error': 'Usuário não autenticado.'}), 401
+
+        data = request.json
+        if not data or 'registro_id' not in data:
+            return jsonify({'error': 'Dados inválidos ou incompletos enviados.'}), 400
+
+        registro_id = data['registro_id']
+        lotes_data = data.get('lotes', [])
+        despesas_data = data.get('despesas', [])
+
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+        subusuario_id = current_user.id if session.get('user_type') == 'subusuario' else None
+
+        # Verificar se o registro existe
+        registro = CalculadoraPasso1Servicos.query.filter_by(id=registro_id, user_id=user_principal_id).first()
+        if not registro:
+            return jsonify({'error': 'Registro não encontrado ou não pertence ao usuário.'}), 400
+
+        # ✅ BUSCAR IMPOSTO DA EMPRESA
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        imposto_percentual = float(empresa.imposto_venda) if empresa and empresa.imposto_venda is not None else 0.0
+
+        # Deletar lotes e serviços antigos
+        lotes_antigos = Lote.query.filter_by(proposta_servico_id=registro_id).all()
+        for lote in lotes_antigos:
+            Servico.query.filter_by(lote_id=lote.id).delete()
+        Lote.query.filter_by(proposta_servico_id=registro_id).delete()
+
+        # Deletar despesas antigas
+        Despesa.query.filter_by(proposta_servico_id=registro_id).delete()
+
+        # Salvar novos lotes e serviços
+        for lote_data in lotes_data:
+            novo_lote = Lote(
+                nome=lote_data['nome'],
+                proposta_servico_id=registro_id,
+                proposta_tipo="servico",
+                user_id=user_principal_id,
+                subusuario_id=subusuario_id
+            )
+            db.session.add(novo_lote)
+            db.session.flush()  # Para obter o ID do lote
+
+            for servico_data in lote_data.get('servicos', []):
+                novo_servico = Servico(
+                    nome=servico_data['nome'],
+                    unidade_medida=str(servico_data.get('unidade_medida', '')),
+                    quantidade=float(servico_data['quantidade']),
+                    custo_unitario=float(servico_data['custo_unitario']),
+                    valor_venda=float(servico_data['valor_venda']),
+                    lote_id=novo_lote.id,
+                    user_id=user_principal_id,
+                    subusuario_id=subusuario_id
+                )
+                db.session.add(novo_servico)
+
+        # Salvar novas despesas
+        for despesa_data in despesas_data:
+            nova_despesa = Despesa(
+                nome=despesa_data['descricao'],
+                valor=float(despesa_data['valor']),
+                proposta_servico_id=registro_id,
+                user_id=user_principal_id,
+                subusuario_id=subusuario_id
+            )
+            db.session.add(nova_despesa)
+
+        db.session.commit()
+
+        app.logger.info(f"✅ Simulação de serviços salva com sucesso para registro {registro_id}")
+        return jsonify({'success': True, 'message': 'Simulação salva com sucesso!'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"❌ Erro ao salvar simulação de serviços: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/servicos/alterar-status/<int:proposta_id>', methods=['POST'])
+@login_required
+def alterar_status_servico(proposta_id):
+    try:
+        if not current_user.is_authenticated:
+            return jsonify({"error": "Não autenticado"}), 401
+
+        user_principal_id = current_user.user_principal_id if session.get(
+            'user_type') == 'subusuario' else current_user.id
+
+        data = request.get_json()
+        novo_status = data.get('status')
+
+        if not novo_status:
+            return jsonify({"error": "Status não informado"}), 400
+
+        proposta = CalculadoraPasso1Servicos.query.filter_by(
+            id=proposta_id,
+            user_id=user_principal_id
+        ).first()
+
+        if not proposta:
+            return jsonify({"error": "Proposta não encontrada"}), 404
+
+        proposta.status = novo_status
+        db.session.commit()
+
+        return jsonify({"success": True, "message": "Status alterado com sucesso"})
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao alterar status: {str(e)}")
+        return jsonify({"error": "Erro interno do servidor"}), 500
+
+
+@app.route('/servicos/excluir/<int:proposta_id>', methods=['DELETE'])
+@login_required
+def excluir_proposta_servico(proposta_id):
+    try:
+        if not current_user.is_authenticated:
+            return jsonify({"error": "Não autenticado"}), 401
+
+        user_principal_id = current_user.user_principal_id if session.get(
+            'user_type') == 'subusuario' else current_user.id
+
+        proposta = CalculadoraPasso1Servicos.query.filter_by(
+            id=proposta_id,
+            user_id=user_principal_id
+        ).first()
+
+        if not proposta:
+            return jsonify({"error": "Proposta não encontrada"}), 404
+
+        # Excluir lotes e serviços relacionados
+        lotes = Lote.query.filter_by(proposta_servico_id=proposta_id).all()
+        for lote in lotes:
+            for servico in lote.servicos:
+                db.session.delete(servico)
+            db.session.delete(lote)
+
+        # Excluir despesas relacionadas
+        despesas = Despesa.query.filter_by(proposta_servico_id=proposta_id).all()
+        for despesa in despesas:
+            db.session.delete(despesa)
+
+        # Excluir a proposta
+        db.session.delete(proposta)
+        db.session.commit()
+
+        return jsonify({"success": True, "message": "Proposta excluída com sucesso"})
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao excluir proposta: {str(e)}")
+        return jsonify({"error": "Erro interno do servidor"}), 500
+
+
+@app.route('/servicos/exportar-bdi/<int:proposta_id>')
+@login_required
+def exportar_bdi_servicos(proposta_id):
+    try:
+        user_principal_id = current_user.user_principal_id if session.get(
+            'user_type') == 'subusuario' else current_user.id
+
+        proposta = CalculadoraPasso1Servicos.query.filter_by(
+            id=proposta_id,
+            user_id=user_principal_id
+        ).first_or_404()
+
+        # Buscar dados
+        lotes = Lote.query.filter_by(proposta_servico_id=proposta_id).all()
+        despesas = Despesa.query.filter_by(proposta_servico_id=proposta_id).all()
+
+        # Criar workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Cálculo BDI"
+
+        # Cabeçalho
+        ws['A1'] = f"CÁLCULO BDI - PROPOSTA {proposta_id}"
+        ws['A1'].font = Font(bold=True, size=14)
+        ws.merge_cells('A1:E1')
+
+        # Dados da proposta
+        ws['A3'] = "Órgão:"
+        ws['B3'] = proposta.razao_social
+        ws['A4'] = "Processo:"
+        ws['B4'] = proposta.numero_processo
+
+        # Cálculos
+        total_custo = 0
+        total_venda = 0
+
+        for lote in lotes:
+            for servico in lote.servicos:
+                total_custo += float(servico.custo_unitario) * float(servico.quantidade)
+                total_venda += float(servico.valor_venda) * float(servico.quantidade)
+
+        total_despesas = sum(float(d.valor) for d in despesas)
+
+        # Tabela BDI
+        ws['A6'] = "COMPONENTES DO BDI"
+        ws['A6'].font = Font(bold=True)
+
+        ws['A7'] = "Administração Central (%)"
+        ws['B7'] = 5.0
+        ws['A8'] = "Seguro (%)"
+        ws['B8'] = 0.5
+        ws['A9'] = "Risco (%)"
+        ws['B9'] = 1.0
+        ws['A10'] = "Lucro (%)"
+        ws['B10'] = 8.0
+        ws['A11'] = "Impostos (%)"
+        ws['B11'] = 13.65
+
+        # Fórmula BDI
+        ws['A13'] = "BDI = [(AC + S + R + L) / (1 - I)] - 1"
+        ws[
+            'A14'] = f"BDI = [({ws['B7'].value} + {ws['B8'].value} + {ws['B9'].value} + {ws['B10'].value}) / (1 - {ws['B11'].value}/100)] - 1"
+
+        bdi_calculado = ((ws['B7'].value + ws['B8'].value + ws['B9'].value + ws['B10'].value) / (
+                1 - ws['B11'].value / 100)) - 1
+        ws['A15'] = f"BDI = {bdi_calculado:.2f}%"
+        ws['A15'].font = Font(bold=True)
+
+        # Aplicação do BDI
+        ws['A17'] = "APLICAÇÃO DO BDI"
+        ws['A17'].font = Font(bold=True)
+
+        ws['A18'] = "Custo Direto:"
+        ws['B18'] = total_custo
+        ws['A19'] = "BDI (%):"
+        ws['B19'] = bdi_calculado
+        ws['A20'] = "Valor com BDI:"
+        ws['B20'] = total_custo * (1 + bdi_calculado / 100)
+        ws['B20'].font = Font(bold=True)
+
+        # Salvar arquivo
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f'BDI_Proposta_{proposta_id}.xlsx',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+
+    except Exception as e:
+        app.logger.error(f"Erro ao exportar BDI: {str(e)}")
+        return jsonify({"error": "Erro ao gerar planilha BDI"}), 500
+
+
+# ---------------------- PÁGINA RELATÓRIOS -------------------#
+relatorios_bp = Blueprint('relatorios', __name__, url_prefix='/precificaja')
+
+
+@app.route('/relatorios', methods=['GET', 'POST'])
+@login_required
+def visualizar_relatorios():
+    """
+    Exibe os registros da CalculadoraPasso1 para relatórios com filtros.
+    """
+    try:
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Aplicar filtros de data e status se enviados
+        data_inicio = request.args.get('data_inicio')
+        data_fim = request.args.get('data_fim')
+        status = request.args.get('status')
+
+        query = CalculadoraPasso1.query.filter_by(user_id=user_principal_id)
+
+        if data_inicio:
+            query = query.filter(CalculadoraPasso1.criado_em >= data_inicio)
+        if data_fim:
+            query = query.filter(CalculadoraPasso1.criado_em <= data_fim)
+        if status:
+            query = query.filter(CalculadoraPasso1.status == status)
+
+        registros = query.order_by(CalculadoraPasso1.criado_em.desc()).all()
+
+        return render_template('relatorios.html', registros=registros, data_inicio=data_inicio, data_fim=data_fim,
+                               status=status)
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar relatórios: {str(e)}")
+        flash("Erro ao carregar a página de relatórios.", "danger")
+        return redirect(url_for('dashboard'))
+
+
+@app.route('/relatorios/detalhes/<int:registro_id>', methods=['GET'])
+@login_required
+def detalhes_registro(registro_id):
+    """
+    Busca os detalhes de um registro específico e os produtos associados.
+    """
+    try:
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Buscar o registro e verificar o acesso
+        registro = CalculadoraPasso1.query.filter_by(id=registro_id, user_id=user_principal_id).first_or_404()
+
+        # Buscar produtos associados
+        produtos = Produto.query.filter_by(calculadora_passo1_id=registro.id).all()
+
+        if not produtos:
+            return jsonify({
+                'registro': {
+                    'id': registro.id,
+                    'cnpj': registro.cnpj,
+                    'razao_social': registro.razao_social,
+                    'endereco': registro.endereco,
+                    'numero_processo': registro.numero_processo,
+                    'status': registro.status,
+                    'criado_em': registro.criado_em.strftime('%Y-%m-%d'),
+                },
+                'produtos': [],
+                'totais': {
+                    'frete': 0.0,
+                    'custo_total': 0.0,
+                    'quantidade_total': 0,
+                    'imposto_total': 0.0,
+                    'valor_total_venda': 0.0,
+                    'lucro_total': 0.0,
+                }
+            }), 200
+
+        # Calcular totais
+        custo_total = sum(p.custo * p.quantidade for p in produtos)
+        quantidade_total = sum(p.quantidade for p in produtos)
+        valor_total_venda = sum(p.venda * p.quantidade for p in produtos)
+
+        # Buscar imposto da empresa associada
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        imposto_venda = empresa.imposto_venda if empresa and empresa.imposto_venda else 0
+        imposto_total = valor_total_venda * (imposto_venda / 100)
+
+        # **Pega apenas um único frete (primeira linha de produto)**
+        frete_total = produtos[0].frete if produtos[0].frete else 0.0
+
+        # Corrigir o cálculo do lucro total com o frete único
+        lucro_total = valor_total_venda - custo_total - imposto_total - frete_total
+
+        return jsonify({
+            'registro': {
+                'id': registro.id,
+                'cnpj': registro.cnpj,
+                'razao_social': registro.razao_social,
+                'endereco': registro.endereco,
+                'numero_processo': registro.numero_processo,
+                'status': registro.status,
+                'criado_em': registro.criado_em.strftime('%Y-%m-%d'),
+            },
+            'produtos': [
+                {
+                    'nome': produto.nome,
+                    'marca_modelo': produto.marca_modelo,
+                    'custo': produto.custo,
+                    'quantidade': produto.quantidade,
+                    'venda': produto.venda,
+                } for produto in produtos
+            ],
+            'totais': {
+                'frete': round(frete_total, 2),
+                'custo_total': round(custo_total, 2),
+                'quantidade_total': quantidade_total,
+                'imposto_total': round(imposto_total, 2),
+                'valor_total_venda': round(valor_total_venda, 2),
+                'lucro_total': round(lucro_total, 2),
+            }
+        }), 200
+    except Exception as e:
+        app.logger.error(f"Erro ao buscar detalhes do registro: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/relatorios/excluir/<int:registro_id>', methods=['DELETE'])
+@login_required
+def excluir_registro(registro_id):
+    """
+    Exclui um registro da CalculadoraPasso1 e todos os produtos associados.
+    """
+    try:
+        user_principal_id = (
+            current_user.user_principal_id if session.get('user_type') == 'subusuario' else current_user.id
+        )
+
+        # Verificar se o registro existe e pertence ao usuário
+        registro = CalculadoraPasso1.query.filter_by(id=registro_id, user_id=user_principal_id).first_or_404()
+
+        # Excluir os produtos associados
+        Produto.query.filter_by(calculadora_passo1_id=registro.id).delete(synchronize_session=False)
+
+        # Excluir o registro
+        db.session.delete(registro)
+        db.session.commit()
+
+        return jsonify({'message': 'Registro excluído com sucesso!'}), 200
+    except Exception as e:
+        app.logger.error(f"Erro ao excluir registro: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+    # ---------------------fornecedores---------------------------
+
+
+# Rotas de Fornecedores - Versão com Paginação Backend e Modal
+
+from flask import render_template, request, redirect, url_for, flash, jsonify
+from flask_login import login_required, current_user
+from sqlalchemy import or_, func
+import requests
+from datetime import datetime
+import math
+
+
+@app.route('/fornecedores', methods=['GET', 'POST'])
+@login_required
+def fornecedores():
+    """
+    Página colaborativa de fornecedores com cadastro, edição, filtros e avaliações.
+    Versão com suporte a paginação backend e modal para cadastro.
+    """
+    try:
+        # Determinar o ID do usuário principal
+        user_principal_id = (
+            current_user.user_principal_id
+            if session.get('user_type') == 'subusuario'
+            else current_user.id
+        )
+
+        # Processar formulário de cadastro (via modal)
+        if request.method == 'POST':
+            return _processar_cadastro_fornecedor(user_principal_id)
+
+        # Parâmetros de paginação e filtros
+        pagina = request.args.get('pagina', 1, type=int)
+        por_pagina = request.args.get('por_pagina', 12, type=int)
+        busca_nome = request.args.get('nome', '', type=str).strip()
+        busca_atividade = request.args.get('atividade', '', type=str).strip()
+
+        # Limitar itens por página para evitar sobrecarga
+        por_pagina = min(por_pagina, 100)
+
+        # Buscar fornecedores com filtros e paginação
+        fornecedores_paginados = _obter_fornecedores_paginados(
+            pagina, por_pagina, busca_nome, busca_atividade
+        )
+
+        # Se for uma requisição AJAX, retornar JSON
+        if request.headers.get('Content-Type') == 'application/json' or request.args.get('ajax'):
+            return jsonify({
+                'success': True,
+                'fornecedores': fornecedores_paginados['items'],
+                'paginacao': {
+                    'pagina_atual': fornecedores_paginados['pagina'],
+                    'total_paginas': fornecedores_paginados['total_paginas'],
+                    'total_itens': fornecedores_paginados['total'],
+                    'por_pagina': fornecedores_paginados['por_pagina'],
+                    'tem_anterior': fornecedores_paginados['tem_anterior'],
+                    'tem_proximo': fornecedores_paginados['tem_proximo']
+                }
+            })
+
+        return render_template('fornecedores.html',
+                               fornecedores=fornecedores_paginados['items'],
+                               paginacao=fornecedores_paginados,
+                               filtros={
+                                   'nome': busca_nome,
+                                   'atividade': busca_atividade
+                               })
+
+    except Exception as e:
+        app.logger.error(f"Erro ao carregar fornecedores: {str(e)}", exc_info=True)
+        flash("Erro ao carregar a página de fornecedores.", "danger")
+        return redirect(url_for('dashboard'))
+
+
+def _obter_fornecedores_paginados(pagina, por_pagina, busca_nome='', busca_atividade=''):
+    """
+    Obtém fornecedores com paginação e filtros aplicados.
+    """
+    try:
+        # Query base
+        query = Fornecedor.query
+
+        # Aplicar filtros se fornecidos
+        if busca_nome:
+            query = query.filter(Fornecedor.nome_empresa.ilike(f'%{busca_nome}%'))
+
+        if busca_atividade:
+            query = query.filter(Fornecedor.atividade_principal.ilike(f'%{busca_atividade}%'))
+
+        # Ordenar por nome da empresa
+        query = query.order_by(Fornecedor.nome_empresa.asc())
+
+        # Aplicar paginação
+        fornecedores_paginados = query.paginate(
+            page=pagina,
+            per_page=por_pagina,
+            error_out=False
+        )
+
+        # Processar fornecedores com avaliações
+        fornecedores_detalhes = []
+        for fornecedor in fornecedores_paginados.items:
+            # Buscar avaliações do fornecedor
+            avaliacoes = AvaliacaoFornecedor.query.filter_by(fornecedor_id=fornecedor.id).all()
+
+            # Calcular média das avaliações
+            media_avaliacao = _calcular_media_avaliacoes(avaliacoes)
+
+            fornecedores_detalhes.append({
+                'id': fornecedor.id,
+                'cnpj': fornecedor.cnpj,
+                'nome_empresa': fornecedor.nome_empresa,
+                'endereco': fornecedor.endereco,
+                'atividade_principal': fornecedor.atividade_principal,
+                'contato': fornecedor.contato,
+                'nome_vendedor': fornecedor.nome_vendedor,
+                'contato_vendedor': fornecedor.contato_vendedor,
+                'comentario': fornecedor.comentario,
+                'media_avaliacao': media_avaliacao,
+                'total_avaliacoes': len(avaliacoes),
+                'data_cadastro': fornecedor.data_cadastro.strftime('%d/%m/%Y') if hasattr(fornecedor,
+                                                                                          'data_cadastro') else None
+            })
+
+        return {
+            'items': fornecedores_detalhes,
+            'pagina': fornecedores_paginados.page,
+            'por_pagina': fornecedores_paginados.per_page,
+            'total': fornecedores_paginados.total,
+            'total_paginas': fornecedores_paginados.pages,
+            'tem_anterior': fornecedores_paginados.has_prev,
+            'tem_proximo': fornecedores_paginados.has_next,
+            'pagina_anterior': fornecedores_paginados.prev_num,
+            'pagina_proxima': fornecedores_paginados.next_num
+        }
+
+    except Exception as e:
+        app.logger.error(f"Erro ao obter fornecedores paginados: {str(e)}", exc_info=True)
+        return {
+            'items': [],
+            'pagina': 1,
+            'por_pagina': por_pagina,
+            'total': 0,
+            'total_paginas': 0,
+            'tem_anterior': False,
+            'tem_proximo': False,
+            'pagina_anterior': None,
+            'pagina_proxima': None
+        }
+
+
+@app.route('/fornecedores/buscar', methods=['GET'])
+@login_required
+def buscar_fornecedores_ajax():
+    """
+    Busca fornecedores via AJAX com paginação.
+    """
+    try:
+        pagina = request.args.get('pagina', 1, type=int)
+        por_pagina = request.args.get('por_pagina', 12, type=int)
+        busca_nome = request.args.get('nome', '', type=str).strip()
+        busca_atividade = request.args.get('atividade', '', type=str).strip()
+
+        # Limitar itens por página
+        por_pagina = min(por_pagina, 100)
+
+        # Buscar fornecedores
+        resultado = _obter_fornecedores_paginados(pagina, por_pagina, busca_nome, busca_atividade)
+
+        return jsonify({
+            'success': True,
+            'fornecedores': resultado['items'],
+            'paginacao': {
+                'pagina_atual': resultado['pagina'],
+                'total_paginas': resultado['total_paginas'],
+                'total_itens': resultado['total'],
+                'por_pagina': resultado['por_pagina'],
+                'tem_anterior': resultado['tem_anterior'],
+                'tem_proximo': resultado['tem_proximo'],
+                'pagina_anterior': resultado['pagina_anterior'],
+                'pagina_proxima': resultado['pagina_proxima']
+            }
+        })
+
+    except Exception as e:
+        app.logger.error(f"Erro ao buscar fornecedores via AJAX: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': 'Erro ao buscar fornecedores.'
+        }), 500
+
+
+def _processar_cadastro_fornecedor(user_principal_id):
+    """
+    Processa o cadastro de um novo fornecedor com validações aprimoradas.
+    Versão otimizada para modal.
+    """
+    try:
+        # Extrair dados do formulário
+        dados_fornecedor = {
+            'cnpj': request.form.get('cnpj', '').strip(),
+            'nome_empresa': request.form.get('nome_empresa', '').strip(),
+            'endereco': request.form.get('endereco', '').strip(),
+            'atividade_principal': request.form.get('atividade_principal', '').strip(),
+            'contato': request.form.get('contato', '').strip(),
+            'nome_vendedor': request.form.get('nome_vendedor', '').strip(),
+            'contato_vendedor': request.form.get('contato_vendedor', '').strip(),
+            'comentario': request.form.get('comentario', '').strip()
+        }
+
+        # Validações básicas
+        erros = _validar_dados_fornecedor(dados_fornecedor)
+        if erros:
+            for erro in erros:
+                flash(erro, "danger")
+            return redirect(url_for('fornecedores'))
+
+        # Verificar se CNPJ já existe
+        fornecedor_existente = Fornecedor.query.filter_by(cnpj=dados_fornecedor['cnpj']).first()
+        if fornecedor_existente:
+            flash("Fornecedor com este CNPJ já está cadastrado.", "warning")
+            return redirect(url_for('fornecedores'))
+
+        # Criar novo fornecedor
+        fornecedor = Fornecedor(
+            cnpj=dados_fornecedor['cnpj'],
+            nome_empresa=dados_fornecedor['nome_empresa'],
+            endereco=dados_fornecedor['endereco'],
+            atividade_principal=dados_fornecedor['atividade_principal'],
+            contato=dados_fornecedor['contato'],
+            nome_vendedor=dados_fornecedor['nome_vendedor'],
+            contato_vendedor=dados_fornecedor['contato_vendedor'],
+            comentario=dados_fornecedor['comentario'],
+            user_id=user_principal_id,
+            data_cadastro=datetime.utcnow()
+        )
+
+        db.session.add(fornecedor)
+        db.session.commit()
+
+        flash("Fornecedor cadastrado com sucesso!", "success")
+        app.logger.info(f"Fornecedor {dados_fornecedor['nome_empresa']} cadastrado pelo usuário {user_principal_id}")
+
+        return redirect(url_for('fornecedores'))
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao cadastrar fornecedor: {str(e)}", exc_info=True)
+        flash("Erro ao cadastrar fornecedor. Tente novamente.", "danger")
+        return redirect(url_for('fornecedores'))
+
+
+def _validar_dados_fornecedor(dados):
+    """
+    Valida os dados de um fornecedor.
+    """
+    erros = []
+
+    # Validar CNPJ
+    if not dados['cnpj']:
+        erros.append("CNPJ é obrigatório")
+    elif len(''.join(filter(str.isdigit, dados['cnpj']))) != 14:
+        erros.append("CNPJ deve conter 14 dígitos")
+
+    # Validar nome da empresa
+    if not dados['nome_empresa']:
+        erros.append("Nome da empresa é obrigatório")
+    elif len(dados['nome_empresa']) < 3:
+        erros.append("Nome da empresa deve ter pelo menos 3 caracteres")
+
+    # Validar atividade principal
+    if not dados['atividade_principal']:
+        erros.append("Atividade principal é obrigatória")
+
+    # Validar endereço
+    if not dados['endereco']:
+        erros.append("Endereço é obrigatório")
+
+    # Validar contato
+    if not dados['contato']:
+        erros.append("Contato é obrigatório")
+
+    # Validar nome do vendedor
+    if not dados['nome_vendedor']:
+        erros.append("Nome do vendedor é obrigatório")
+    elif len(dados['nome_vendedor']) < 3:
+        erros.append("Nome do vendedor deve ter pelo menos 3 caracteres")
+
+    # Validar contato do vendedor
+    if not dados['contato_vendedor']:
+        erros.append("Contato do vendedor é obrigatório")
+
+    # Validar comentário
+    if not dados['comentario']:
+        erros.append("Comentário é obrigatório")
+    elif len(dados['comentario']) < 10:
+        erros.append("Comentário deve ter pelo menos 10 caracteres")
+
+    return erros
+
+
+def _calcular_media_avaliacoes(avaliacoes):
+    """
+    Calcula a média das avaliações de um fornecedor.
+    """
+    if not avaliacoes:
+        return 0
+
+    total_prazo = sum(avaliacao.nota_prazo for avaliacao in avaliacoes)
+    total_qualidade = sum(avaliacao.nota_qualidade for avaliacao in avaliacoes)
+    total_preco = sum(avaliacao.nota_preco for avaliacao in avaliacoes)
+    total_avaliacoes = len(avaliacoes) * 3  # 3 notas por avaliação
+
+    return round((total_prazo + total_qualidade + total_preco) / total_avaliacoes, 2)
+
+
+@app.route('/fornecedores/estatisticas', methods=['GET'])
+@login_required
+def estatisticas_fornecedores():
+    """
+    Retorna estatísticas gerais dos fornecedores.
+    """
+    try:
+        # Estatísticas básicas
+        total_fornecedores = Fornecedor.query.count()
+        total_avaliacoes = AvaliacaoFornecedor.query.count()
+
+        # Fornecedores por atividade (top 10)
+        atividades = db.session.query(
+            Fornecedor.atividade_principal,
+            func.count(Fornecedor.id).label('total')
+        ).group_by(Fornecedor.atividade_principal).order_by(
+            func.count(Fornecedor.id).desc()
+        ).limit(10).all()
+
+        # Fornecedores mais bem avaliados (top 10)
+        subquery = db.session.query(
+            AvaliacaoFornecedor.fornecedor_id,
+            func.avg((AvaliacaoFornecedor.nota_prazo +
+                      AvaliacaoFornecedor.nota_qualidade +
+                      AvaliacaoFornecedor.nota_preco) / 3.0).label('media')
+        ).group_by(AvaliacaoFornecedor.fornecedor_id).subquery()
+
+        melhores_fornecedores = db.session.query(
+            Fornecedor.nome_empresa,
+            subquery.c.media
+        ).join(subquery, Fornecedor.id == subquery.c.fornecedor_id).order_by(
+            subquery.c.media.desc()
+        ).limit(10).all()
+
+        return jsonify({
+            'success': True,
+            'estatisticas': {
+                'total_fornecedores': total_fornecedores,
+                'total_avaliacoes': total_avaliacoes,
+                'media_avaliacoes_por_fornecedor': round(total_avaliacoes / total_fornecedores,
+                                                         2) if total_fornecedores > 0 else 0,
+                'atividades_principais': [
+                    {'atividade': ativ[0], 'total': ativ[1]}
+                    for ativ in atividades
+                ],
+                'melhores_fornecedores': [
+                    {'nome': forn[0], 'media': round(float(forn[1]), 2)}
+                    for forn in melhores_fornecedores
+                ]
+            }
+        })
+
+    except Exception as e:
+        app.logger.error(f"Erro ao obter estatísticas: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': 'Erro ao obter estatísticas.'
+        }), 500
+
+
+@app.route('/fornecedores/exportar', methods=['GET'])
+@login_required
+def exportar_fornecedores():
+    """
+    Exporta lista de fornecedores em formato CSV.
+    """
+    try:
+        import csv
+        from io import StringIO
+
+        # Buscar todos os fornecedores
+        fornecedores = Fornecedor.query.order_by(Fornecedor.nome_empresa.asc()).all()
+
+        # Criar CSV
+        output = StringIO()
+        writer = csv.writer(output)
+
+        # Cabeçalho
+        writer.writerow([
+            'CNPJ', 'Nome da Empresa', 'Atividade Principal', 'Endereço',
+            'Contato', 'Nome do Vendedor', 'Contato do Vendedor', 'Comentário',
+            'Média de Avaliações', 'Total de Avaliações', 'Data de Cadastro'
+        ])
+
+        # Dados
+        for fornecedor in fornecedores:
+            avaliacoes = AvaliacaoFornecedor.query.filter_by(fornecedor_id=fornecedor.id).all()
+            media_avaliacao = _calcular_media_avaliacoes(avaliacoes)
+
+            writer.writerow([
+                fornecedor.cnpj,
+                fornecedor.nome_empresa,
+                fornecedor.atividade_principal,
+                fornecedor.endereco,
+                fornecedor.contato,
+                fornecedor.nome_vendedor or '',
+                fornecedor.contato_vendedor or '',
+                fornecedor.comentario or '',
+                media_avaliacao,
+                len(avaliacoes),
+                fornecedor.data_cadastro.strftime('%d/%m/%Y') if hasattr(fornecedor, 'data_cadastro') else ''
+            ])
+
+        # Preparar resposta
+        output.seek(0)
+
+        from flask import make_response
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers[
+            'Content-Disposition'] = f'attachment; filename=fornecedores_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+
+        return response
+
+    except Exception as e:
+        app.logger.error(f"Erro ao exportar fornecedores: {str(e)}", exc_info=True)
+        flash("Erro ao exportar fornecedores.", "danger")
+        return redirect(url_for('fornecedores'))
+
+
+# Manter as rotas existentes de avaliação e consulta CNPJ
+@app.route('/fornecedores/detalhes/<int:fornecedor_id>', methods=['GET'])
+@login_required
+def detalhes_fornecedor(fornecedor_id):
+    """
+    Retorna os detalhes completos de um fornecedor específico em formato JSON.
+    """
+    try:
+        fornecedor = Fornecedor.query.get_or_404(fornecedor_id)
+        avaliacoes = AvaliacaoFornecedor.query.filter_by(fornecedor_id=fornecedor_id).all()
+
+        # Calcular médias detalhadas
+        medias = _calcular_medias_detalhadas(avaliacoes)
+
+        # Formatar avaliações para JSON
+        avaliacoes_json = [
+            {
+                "id": a.id,
+                "nota_prazo": a.nota_prazo,
+                "nota_qualidade": a.nota_qualidade,
+                "nota_preco": a.nota_preco,
+                "comentario": a.comentario,
+                "data_avaliacao": a.data_avaliacao.strftime('%d/%m/%Y'),
+                "usuario": a.user.nome if hasattr(a, 'user') and a.user else 'Usuário não identificado'
+            }
+            for a in avaliacoes
+        ]
+
+        return jsonify({
+            "success": True,
+            "fornecedor": {
+                "id": fornecedor.id,
+                "cnpj": fornecedor.cnpj,
+                "nome_empresa": fornecedor.nome_empresa,
+                "endereco": fornecedor.endereco,
+                "atividade_principal": fornecedor.atividade_principal,
+                "contato": fornecedor.contato,
+                "nome_vendedor": fornecedor.nome_vendedor,
+                "contato_vendedor": fornecedor.contato_vendedor,
+                "comentario": fornecedor.comentario,
+                "data_cadastro": fornecedor.data_cadastro.strftime('%d/%m/%Y') if hasattr(fornecedor,
+                                                                                          'data_cadastro') else None
+            },
+            "avaliacoes": avaliacoes_json,
+            "estatisticas": {
+                "total_avaliacoes": len(avaliacoes),
+                "media_prazo": medias['prazo'],
+                "media_qualidade": medias['qualidade'],
+                "media_preco": medias['preco'],
+                "media_geral": medias['geral']
+            }
+        })
+
+    except Exception as e:
+        app.logger.error(f"Erro ao buscar detalhes do fornecedor {fornecedor_id}: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": "Erro ao buscar detalhes do fornecedor."
+        }), 500
+
+
+def _calcular_medias_detalhadas(avaliacoes):
+    """
+    Calcula médias detalhadas por categoria de avaliação.
+    """
+    if not avaliacoes:
+        return {
+            'prazo': 0,
+            'qualidade': 0,
+            'preco': 0,
+            'geral': 0
+        }
+
+    total_avaliacoes = len(avaliacoes)
+    media_prazo = sum(a.nota_prazo for a in avaliacoes) / total_avaliacoes
+    media_qualidade = sum(a.nota_qualidade for a in avaliacoes) / total_avaliacoes
+    media_preco = sum(a.nota_preco for a in avaliacoes) / total_avaliacoes
+    media_geral = (media_prazo + media_qualidade + media_preco) / 3
+
+    return {
+        'prazo': round(media_prazo, 2),
+        'qualidade': round(media_qualidade, 2),
+        'preco': round(media_preco, 2),
+        'geral': round(media_geral, 2)
+    }
+
+
+@app.route('/fornecedores/avaliar/<int:fornecedor_id>', methods=['POST'])
+@login_required
+def avaliar_fornecedor(fornecedor_id):
+    """
+    Registra uma nova avaliação para um fornecedor.
+    """
+    try:
+        # Verificar se o fornecedor existe
+        fornecedor = Fornecedor.query.get_or_404(fornecedor_id)
+
+        # Extrair dados da avaliação
+        dados_avaliacao = {
+            'nota_prazo': request.form.get('nota_prazo', type=int),
+            'nota_qualidade': request.form.get('nota_qualidade', type=int),
+            'nota_preco': request.form.get('nota_preco', type=int),
+            'comentario': request.form.get('comentario', '').strip()
+        }
+
+        # Validações
+        erros = _validar_dados_avaliacao(dados_avaliacao)
+        if erros:
+            return jsonify({
+                "success": False,
+                "error": "; ".join(erros)
+            }), 400
+
+        # Verificar se o usuário já avaliou este fornecedor
+        avaliacao_existente = AvaliacaoFornecedor.query.filter_by(
+            fornecedor_id=fornecedor_id,
+            user_id=current_user.id
+        ).first()
+
+        if avaliacao_existente:
+            # Atualizar avaliação existente
+            avaliacao_existente.nota_prazo = dados_avaliacao['nota_prazo']
+            avaliacao_existente.nota_qualidade = dados_avaliacao['nota_qualidade']
+            avaliacao_existente.nota_preco = dados_avaliacao['nota_preco']
+            avaliacao_existente.comentario = dados_avaliacao['comentario']
+            avaliacao_existente.data_avaliacao = datetime.utcnow()
+
+            mensagem = "Avaliação atualizada com sucesso!"
+        else:
+            # Criar nova avaliação
+            avaliacao = AvaliacaoFornecedor(
+                fornecedor_id=fornecedor_id,
+                user_id=current_user.id,
+                nota_prazo=dados_avaliacao['nota_prazo'],
+                nota_qualidade=dados_avaliacao['nota_qualidade'],
+                nota_preco=dados_avaliacao['nota_preco'],
+                comentario=dados_avaliacao['comentario'],
+                data_avaliacao=datetime.utcnow()
+            )
+            db.session.add(avaliacao)
+
+            mensagem = "Avaliação registrada com sucesso!"
+
+        db.session.commit()
+
+        # Recalcular média atualizada
+        avaliacoes_atualizadas = AvaliacaoFornecedor.query.filter_by(fornecedor_id=fornecedor_id).all()
+        nova_media = _calcular_media_avaliacoes(avaliacoes_atualizadas)
+
+        return jsonify({
+            "success": True,
+            "message": mensagem,
+            "nova_media": nova_media,
+            "total_avaliacoes": len(avaliacoes_atualizadas)
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Erro ao registrar avaliação para fornecedor {fornecedor_id}: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": "Erro interno ao registrar avaliação."
+        }), 500
+
+
+def _validar_dados_avaliacao(dados):
+    """
+    Valida os dados de uma avaliação.
+    """
+    erros = []
+
+    # Validar notas
+    for campo, valor in [('prazo', dados['nota_prazo']), ('qualidade', dados['nota_qualidade']),
+                         ('preco', dados['nota_preco'])]:
+        if valor is None or valor < 1 or valor > 5:
+            erros.append(f"Nota de {campo} deve estar entre 1 e 5")
+
+    # Validar comentário
+    if not dados['comentario'] or len(dados['comentario'].strip()) < 10:
+        erros.append("Comentário deve ter pelo menos 10 caracteres")
+
+    return erros
+
+
+@app.route('/fornecedores/consultar_cnpj', methods=['GET'])
+@login_required
+def consultar_cnpj_fornecedor():
+    """
+    Consulta CNPJ na API da Receita Federal e retorna os dados.
+    """
+    cnpj = request.args.get('cnpj', '').strip()
+
+    if not cnpj:
+        return jsonify({
+            "success": False,
+            "error": "CNPJ não fornecido."
+        }), 400
+
+    # Limpar CNPJ (remover caracteres especiais)
+    cnpj_limpo = ''.join(filter(str.isdigit, cnpj))
+
+    if len(cnpj_limpo) != 14:
+        return jsonify({
+            "success": False,
+            "error": "CNPJ deve conter 14 dígitos."
+        }), 400
+
+    try:
+        # Consultar API da Receita Federal com timeout
+        response = requests.get(
+            f"https://receitaws.com.br/v1/cnpj/{cnpj_limpo}",
+            timeout=10
+        )
+
+        if response.status_code != 200:
+            return jsonify({
+                "success": False,
+                "error": "Erro ao consultar CNPJ na Receita Federal."
+            }), 400
+
+        data = response.json()
+
+        if data.get("status") != "OK":
+            return jsonify({
+                "success": False,
+                "error": f"CNPJ não encontrado ou inválido: {data.get('message', 'Erro desconhecido')}"
+            }), 400
+
+        # Formatar dados de retorno
+        endereco_completo = _formatar_endereco(data)
+        atividade_principal = _extrair_atividade_principal(data)
+
+        return jsonify({
+            "success": True,
+            "razao_social": data.get("nome", ""),
+            "endereco": endereco_completo,
+            "atividade_principal": atividade_principal,
+            "situacao": data.get("situacao", ""),
+            "data_situacao": data.get("data_situacao", "")
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "success": False,
+            "error": "Timeout na consulta. Tente novamente."
+        }), 500
+    except Exception as e:
+        app.logger.error(f"Erro ao consultar CNPJ {cnpj_limpo}: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": "Erro interno ao consultar CNPJ."
+        }), 500
+
+
+def _formatar_endereco(data):
+    """
+    Formata o endereço a partir dos dados da API.
+    """
+    componentes = [
+        data.get('logradouro', ''),
+        data.get('numero', ''),
+        data.get('bairro', ''),
+        data.get('municipio', ''),
+        data.get('uf', '')
+    ]
+
+    endereco = ', '.join(filter(None, componentes))
+    return endereco if endereco != ', , , , ' else 'Endereço não disponível'
+
+
+def _extrair_atividade_principal(data):
+    """
+    Extrai a atividade principal dos dados da API.
+    """
+    atividade_principal = data.get("atividade_principal", [])
+    if isinstance(atividade_principal, list) and atividade_principal:
+        return atividade_principal[0].get("text", "Não informado")
+    return "Não informado"
+
+    # ---------------SLIDEBAR------------------
+
+
+@app.route('/precificaja/gerenciar_banners', methods=['GET'])
+def gerenciar_banners():
+    banners = Banner.query.all()
+    return render_template('gerenciar_banners.html', banners=banners)
+
+
+@app.route('/precificaja/adicionar_banner', methods=['POST'])
+def adicionar_banner():
+    if 'banner_image' not in request.files or 'banner_link' not in request.form:
+        flash("Imagem e link são obrigatórios.", "danger")
+        return redirect(url_for('gerenciar_banners'))
+
+    banner_image = request.files['banner_image']
+    banner_link = request.form['banner_link']
+
+    if banner_image.filename == '':
+        flash("Nenhum arquivo selecionado.", "danger")
+        return redirect(url_for('gerenciar_banners'))
+
+    if not banner_link.startswith(('http://', 'https://')):
+        flash("O link deve começar com http:// ou https://.", "danger")
+        return redirect(url_for('gerenciar_banners'))
+
+    # Salvar imagem
+    filename = secure_filename(banner_image.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    banner_image.save(filepath)
+
+    # Adicionar ao banco de dados
+    novo_banner = Banner(filename=filename, link=banner_link)
+    db.session.add(novo_banner)
+    db.session.commit()
+
+    flash("Banner adicionado com sucesso!", "success")
+    return redirect(url_for('gerenciar_banners'))
+
+
+@app.route('/precificaja/remover_banner/<int:banner_id>', methods=['POST'])
+def remover_banner(banner_id):
+    banner = Banner.query.get_or_404(banner_id)
+
+    # Remover imagem do servidor
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], banner.filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    # Remover do banco de dados
+    db.session.delete(banner)
+    db.session.commit()
+
+    flash("Banner removido com sucesso!", "success")
+    return redirect(url_for('gerenciar_banners'))
+
+
+@app.before_request
+def carregar_banners():
+    from models import Banner  # Certifique-se de que o modelo `Banner` está importado
+    g.banners = Banner.query.all()  # Carrega todos os banners disponíveis
+
+
+# -------------SUPORTE--------------#
+
+@app.route('/precificaja/chamados', methods=['GET', 'POST'])
+@login_required
+def abrir_chamado():
+    if request.method == 'POST':
+        titulo = request.form.get('titulo')
+        descricao = request.form.get('descricao')
+        arquivo = request.files.get('anexo')
+
+        if not titulo or not descricao:
+            flash('Título e descrição são obrigatórios!', 'danger')
+            return redirect(url_for('abrir_chamado'))
+
+        anexo_path = None  # Inicializa como None caso não tenha anexo
+
+        # Upload de anexo para chamados sem afetar registros antigos
+        if arquivo and arquivo.filename != '':
+            anexo_path = salvar_arquivo(arquivo, CHAMADOS_UPLOAD_FOLDER)
+
+        # Criar um novo chamado no banco de dados
+        novo_chamado = ChamadoSuporte(
+            usuario_id=current_user.id,
+            titulo=titulo,
+            descricao=descricao,
+            anexo=anexo_path if anexo_path else None  # Garante compatibilidade com chamados antigos
+        )
+
+        db.session.add(novo_chamado)
+        db.session.commit()
+
+        # Enviar e-mails de notificação
+        enviar_email_chamado(current_user.email, 'Novo chamado aberto!', f'Título: {titulo}\nDescrição: {descricao}')
+        enviar_email_chamado('contato@licitacom.com.br', 'Novo chamado recebido!',
+                             f'Usuário: {current_user.email}\nTítulo: {titulo}\nDescrição: {descricao}')
+
+        flash('Chamado aberto com sucesso!', 'success')
+        return redirect(url_for('abrir_chamado'))
+
+    # Ordenar por data, com não finalizados primeiro
+    chamados = ChamadoSuporte.query.filter_by(usuario_id=current_user.id).order_by(
+        ChamadoSuporte.status != 'Finalizado', ChamadoSuporte.data_criacao.desc()
+    ).all()
+    return render_template('chamados_usuario.html', chamados=chamados)
+
+
+def salvar_arquivo(arquivo, pasta_destino):
+    if not arquivo or arquivo.filename == '':
+        return None
+
+    filename = secure_filename(arquivo.filename)
+    pasta_destino = os.path.join(BASE_UPLOAD_FOLDER, os.path.basename(pasta_destino))
+    os.makedirs(pasta_destino, exist_ok=True)
+
+    filepath = os.path.join(pasta_destino, filename)
+
+    try:
+        arquivo.save(filepath)
+        logging.info(f"Arquivo salvo corretamente em: {filepath}")
+
+        # Correção aqui 👇 (retorna só o nome do arquivo)
+        return filename
+
+    except Exception as e:
+        logging.error(f"Erro ao salvar o arquivo: {e}")
+        return None
+
+
+from math import ceil
+from sqlalchemy.orm import selectinload
+
+
+@app.route('/precificaja/chamados/admin', methods=['GET', 'POST'])
+@login_required
+def admin_chamados():
+    if request.method == 'POST':
+        chamado_id = request.form.get('chamado_id')
+        resposta_texto = request.form.get('resposta')
+        status = request.form.get('status')
+        arquivo = request.files.get('anexo_resposta')
+
+        chamado = ChamadoSuporte.query.get(chamado_id)
+        if chamado:
+            resposta = RespostaChamado(
+                chamado_id=chamado.id,
+                autor='atendente',
+                mensagem=resposta_texto,
+                data=datetime.utcnow()
+            )
+
+            if arquivo and arquivo.filename:
+                anexo_path = salvar_arquivo(arquivo, RESPOSTAS_UPLOAD_FOLDER)
+                if anexo_path:
+                    resposta.anexo = anexo_path
+
+            chamado.status = status
+            chamado.data_resposta = datetime.utcnow()
+            db.session.add(resposta)
+            db.session.commit()
+
+            user = User.query.get(chamado.usuario_id)
+            if user:
+                mensagem_email = f"""
+                Seu chamado foi atualizado.
+
+                Título: {chamado.titulo}
+                Resposta: {resposta_texto}
+                Status: {status}
+                """
+                enviar_email_chamado(user.email, 'Atualização no seu chamado', mensagem_email)
+
+            flash('Chamado atualizado com sucesso!', 'success')
+        else:
+            flash('Chamado não encontrado.', 'danger')
+
+    # --- Paginação exclusiva para FINALIZADOS ---
+    pf = request.args.get('pf', type=int, default=1)  # página dos finalizados
+    per_page_final = 10
+
+    # Eager-load do usuario para evitar N+1 (só email/relacionamento)
+    base_opts = selectinload(ChamadoSuporte.usuario)
+
+    abertos = (ChamadoSuporte.query
+               .options(base_opts)
+               .filter(ChamadoSuporte.status == 'Aberto')
+               .order_by(ChamadoSuporte.data_criacao.desc())
+               .all())
+
+    em_processo = (ChamadoSuporte.query
+                   .options(base_opts)
+                   .filter(ChamadoSuporte.status == 'Em processo')
+                   .order_by(ChamadoSuporte.data_criacao.desc())
+                   .all())
+
+    q_final = (ChamadoSuporte.query
+               .options(base_opts)
+               .filter(ChamadoSuporte.status == 'Finalizado')
+               .order_by(ChamadoSuporte.data_criacao.desc()))
+
+    total_final = q_final.count()
+    finalizados = (q_final
+                   .limit(per_page_final)
+                   .offset((pf - 1) * per_page_final)
+                   .all())
+    total_pages_final = max(1, ceil(total_final / per_page_final))
+
+    return render_template(
+        'chamados_admin.html',
+        abertos=abertos,
+        em_processo=em_processo,
+        finalizados=finalizados,
+        pf=pf,
+        pf_total=total_pages_final,
+        per_page_final=per_page_final,
+        total_final=total_final
+    )
+
+
+@app.route('/precificaja/chamados/excluir/<int:chamado_id>', methods=['POST'])
+@login_required
+def excluir_chamado(chamado_id):
+    chamado = ChamadoSuporte.query.get_or_404(chamado_id)
+
+    # Exclui as respostas relacionadas primeiro (se houver)
+    RespostaChamado.query.filter_by(chamado_id=chamado.id).delete()
+
+    db.session.delete(chamado)
+    db.session.commit()
+
+    flash('Chamado excluído com sucesso!', 'success')
+    return redirect(url_for('admin_chamados'))
+
+
+def enviar_email_chamado(destinatario, assunto, mensagem):
+    try:
+        msg = Message(assunto, sender='contato@licitacom.com.br', recipients=[destinatario])
+        msg.body = mensagem
+        mail.send(msg)
+        print(f"E-mail enviado com sucesso para {destinatario}")
+    except Exception as e:
+        print(f'Erro ao enviar e-mail para {destinatario}: {e}')
+
+
+from flask import send_from_directory
+
+
+# Rotas originais (MANTER PARA COMPATIBILIDADE)
+@app.route('/precificaja/chamados/ver_anexo/<path:filename>')
+def ver_anexo(filename):
+    return send_from_directory(os.path.join(BASE_UPLOAD_FOLDER, 'chamados'), filename)
+
+
+@app.route('/precificaja/chamados/ver_anexo_resposta/<path:filename>')
+def ver_anexo_resposta(filename):
+    return send_from_directory(os.path.join(BASE_UPLOAD_FOLDER, 'respostas_chamados'), filename)
+
+
+# Nova rota para fotos de produtos
+@app.route('/static/uploads/produtos/<path:filename>')
+def ver_foto_produto(filename):
+    return send_from_directory(PRODUTOS_UPLOAD_FOLDER, filename)
+
+
+@app.route('/precificaja/chamados/responder', methods=['POST'])
+@login_required
+def responder_chamado():
+    chamado_id = request.form.get('chamado_id')
+    nova_resposta = request.form.get('nova_resposta')
+    arquivo = request.files.get('anexo_resposta')
+
+    if not chamado_id or not nova_resposta:
+        flash("Erro ao enviar resposta.", "danger")
+        return redirect(url_for('abrir_chamado'))
+
+    chamado = ChamadoSuporte.query.get(chamado_id)
+    if not chamado:
+        flash("Chamado não encontrado.", "danger")
+        return redirect(url_for('abrir_chamado'))
+
+    resposta = RespostaChamado(
+        chamado_id=chamado.id,
+        autor='cliente',
+        mensagem=nova_resposta,
+        data=datetime.utcnow()
+    )
+
+    if arquivo and arquivo.filename:
+        anexo_path = salvar_arquivo(arquivo, RESPOSTAS_UPLOAD_FOLDER)
+        if anexo_path:
+            resposta.anexo = anexo_path
+
+    db.session.add(resposta)
+    db.session.commit()
+
+    flash("Resposta adicionada com sucesso!", "success")
+    return redirect(url_for('abrir_chamado'))
+
+
+import re
+import logging
+
+
+# -----------Indicação---------#
+
+
+@app.route('/afiliados')
+@login_required  # Apenas usuários logados podem acessar
+def pagina_afiliados():
+    return render_template("afiliados.html")
+
+
+# ============================================================================
+# Cadastro de produtos e fornecedores
+# ============================================================================
+import csv
+import tempfile
+import os
+import time
+import io
+import re
+import logging
+import requests
+from datetime import datetime
+from flask import request, jsonify, current_app, render_template, redirect, url_for, flash, send_file, make_response
+from flask_login import login_required, current_user
+from werkzeug.utils import secure_filename
+from models import db, ProdutosFornecedores, FornecedorProdutos, ProdutoDetalhes  # Adicionado ProdutoDetalhes
+
+
+# ============================================================================
+# FUNÇÕES AUXILIARES
+# ============================================================================
+
+def processar_valor_monetario(valor_str):
+    """
+    Processa valores monetários de diferentes formatos
+    """
+    if not valor_str:
+        return 0.0
+
+    try:
+        # Converter para string e limpar
+        valor_str = str(valor_str).strip()
+
+        # Casos especiais
+        if not valor_str or valor_str.lower() in [None,
+                                                  'nan', 'null', 'none', '']:
+            return 0.0
+
+        # Remover símbolos de moeda
+        valor_limpo = valor_str.replace("R$", "").replace("$", "").strip()
+
+        # Remover caracteres não numéricos exceto vírgula e ponto
+        valor_limpo = re.sub(r"[^\d,.-]", "", valor_limpo)
+
+        if not valor_limpo:
+            return 0.0
+
+        # Processar formato brasileiro (vírgula como decimal)
+        if "," in valor_limpo and "." in valor_limpo:
+            # Formato: 1.234,56
+            if valor_limpo.rfind(",") > valor_limpo.rfind("."):
+                partes = valor_limpo.rsplit(",", 1)
+                parte_inteira = partes[0].replace(".", "")
+                parte_decimal = partes[1] if len(partes) > 1 else "0"
+                valor_final = parte_inteira + "." + parte_decimal
+            else:
+                # Formato: 1,234.56
+                partes = valor_limpo.rsplit(".", 1)
+                parte_inteira = partes[0].replace(",", "")
+                parte_decimal = partes[1] if len(partes) > 1 else "0"
+                valor_final = parte_inteira + "." + parte_decimal
+        elif "," in valor_limpo:
+            # Apenas vírgula: assumir decimal brasileiro
+            valor_final = valor_limpo.replace(",", ".")
+        else:
+            # Apenas pontos ou só números
+            valor_final = valor_limpo
+
+        # Conversão final
+        resultado = float(valor_final)
+        return round(max(0, resultado), 2)
+
+    except Exception as e:
+        current_app.logger.warning(f"Erro ao processar valor '{valor_str}': {e}")
+        return 0.0
+
+
+def detectar_delimitador(sample_text):
+    """Detecta automaticamente o delimitador do CSV"""
+    delimitadores = [",", ";", "\t", "|"]
+    counts = {}
+
+    for delim in delimitadores:
+        counts[delim] = sample_text.count(delim)
+
+    return max(counts, key=counts.get) if max(counts.values()) > 0 else ","
+
+
+def detectar_encoding(file_path):
+    """Detecta automaticamente o encoding do arquivo"""
+    encodings = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+
+    for encoding in encodings:
+        try:
+            with open(file_path, "r", encoding=encoding) as f:
+                f.read(1000)
+            return encoding
+        except UnicodeDecodeError:
+            continue
+
+    return "utf-8"
+
+
+# ============================================================================
+# ROTA CORRIGIDA PARA CADASTRO DE FORNECEDOR (SEM CONSTRAINT ÚNICA)
+# ============================================================================
+
+@app.route("/fornecedor_produtos/cadastrar", methods=["POST"])
+@login_required
+def cadastrar_fornecedor_produto():
+    """
+    ROTA CORRIGIDA: Cadastra fornecedor permitindo CNPJ duplicado entre usuários
+    """
+    try:
+        current_app.logger.info(f"Cadastrando fornecedor para usuário {current_user.id}")
+
+        # Obter dados do formulário
+        cnpj = request.form.get("cnpj", "").strip()
+        nome_empresa = request.form.get("nome_empresa", "").strip()
+        endereco = request.form.get("endereco", "").strip()
+        atividade_principal = request.form.get("atividade_principal", "").strip()
+        contato = request.form.get("contato", "").strip()
+        nome_vendedor = request.form.get("nome_vendedor", "").strip()
+        contato_vendedor = request.form.get("contato_vendedor", "").strip()
+        comentario = request.form.get("comentario", "").strip()
+
+        # Validações básicas
+        if not cnpj:
+            flash("CNPJ é obrigatório!", "danger")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        if not nome_empresa:
+            flash("Nome da empresa é obrigatório!", "danger")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        # CORREÇÃO: Verificar se CNPJ já existe APENAS para este usuário
+        fornecedor_existente = FornecedorProdutos.query.filter_by(
+            cnpj=cnpj,
+            user_id=current_user.id
+        ).first()
+
+        if fornecedor_existente:
+            flash(f"Você já possui um fornecedor cadastrado com o CNPJ {cnpj}!", "warning")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        # Criar novo fornecedor
+        novo_fornecedor = FornecedorProdutos(
+            cnpj=cnpj,
+            nome_empresa=nome_empresa,
+            endereco=endereco if endereco else None,
+            atividade_principal=atividade_principal if atividade_principal else None,
+            contato=contato if contato else None,
+            nome_vendedor=nome_vendedor if nome_vendedor else None,
+            contato_vendedor=contato_vendedor if contato_vendedor else None,
+            comentario=comentario if comentario else None,
+            user_id=current_user.id
+        )
+
+        db.session.add(novo_fornecedor)
+        db.session.commit()
+
+        current_app.logger.info(f"Fornecedor '{nome_empresa}' cadastrado com sucesso para usuário {current_user.id}")
+        flash(f"Fornecedor '{nome_empresa}' cadastrado com sucesso!", "success")
+
+        return redirect(url_for("listar_produtos_fornecedores"))
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao cadastrar fornecedor: {e}")
+
+        # CORREÇÃO: Verificar se é erro de constraint e dar mensagem específica
+        if "Duplicate entry" in str(e) and "cnpj" in str(e):
+            flash("Este CNPJ já está cadastrado por você. Verifique seus fornecedores.", "warning")
+        else:
+            flash("Erro ao cadastrar fornecedor. Tente novamente.", "danger")
+
+        return redirect(url_for("listar_produtos_fornecedores"))
+
+
+@app.route("/produtos_fornecedores/editar", methods=["POST"])
+@login_required
+def editar_produto_fornecedor():
+    """Rota para editar produto - VERSÃO CORRIGIDA"""
+    try:
+        # Log para debug
+        current_app.logger.info(f"Iniciando edição de produto para usuário {current_user.id}")
+
+        produto_id = request.form.get("produto_id")
+        nome = request.form.get("nome", "").strip()
+        marca = request.form.get("marca", "").strip()
+        modelo = request.form.get("modelo", "").strip()
+        unidade_medida = request.form.get("unidade_medida", "").strip()
+        custo_str = request.form.get("custo", "").strip()
+        fornecedor_id = request.form.get("fornecedor_id", "").strip()
+
+        current_app.logger.info(f"Editando produto ID: {produto_id}")
+
+        # Buscar produto
+        produto = ProdutosFornecedores.query.filter_by(
+            id=produto_id,
+            user_id=current_user.id
+        ).first()
+
+        if not produto:
+            flash("Produto não encontrado!", "danger")
+            current_app.logger.warning(f"Edição falhou: Produto ID {produto_id} não encontrado")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        # Validações
+        if not nome:
+            flash("Nome do produto é obrigatório!", "danger")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        # Processar custo
+        try:
+            custo = float(custo_str.replace(",", "."))
+            if custo <= 0:
+                raise ValueError("Custo deve ser maior que zero")
+        except (ValueError, TypeError) as e:
+            flash("Custo deve ser um número válido maior que zero!", "danger")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        # Processar fornecedor
+        fornecedor_id_final = None
+        if fornecedor_id and fornecedor_id != "":
+            try:
+                fornecedor_id_final = int(fornecedor_id)
+                # Verificar se fornecedor existe
+                fornecedor = FornecedorProdutos.query.filter_by(
+                    id=fornecedor_id_final,
+                    user_id=current_user.id
+                ).first()
+                if not fornecedor:
+                    flash("Fornecedor selecionado não encontrado!", "danger")
+                    return redirect(url_for("listar_produtos_fornecedores"))
+            except (ValueError, TypeError):
+                fornecedor_id_final = None
+
+        # Atualizar dados
+        produto.nome = nome
+        produto.marca = marca if marca else None
+        produto.modelo = modelo if modelo else None
+        produto.unidade_medida = unidade_medida if unidade_medida else "UN"
+        produto.custo = custo
+        produto.fornecedor_id = fornecedor_id_final
+
+        db.session.commit()
+
+        flash(f"Produto '{nome}' atualizado com sucesso!", "success")
+        current_app.logger.info(f"Produto '{nome}' atualizado com sucesso - ID: {produto.id}")
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao editar produto: {e}")
+        flash(f"Erro ao editar produto: {str(e)}", "danger")
+
+    return redirect(url_for("listar_produtos_fornecedores"))
+
+
+# ============================================================================
+# ROTA PARA EDITAR FORNECEDOR
+# ============================================================================
+# Em app.py
+@app.route("/fornecedor_produtos/editar/<int:fornecedor_id>", methods=["POST"])
+@login_required
+def editar_fornecedor_produto(fornecedor_id):
+    """
+    ROTA AJAX PARA EDITAR UM FORNECEDOR EXISTENTE
+    """
+    try:
+        fornecedor = FornecedorProdutos.query.filter_by(id=fornecedor_id, user_id=current_user.id).first()
+        if not fornecedor:
+            return jsonify({'success': False, 'error': 'Fornecedor não encontrado ou não autorizado.'}), 404
+
+        cnpj = request.form.get("cnpj", "").strip()
+        nome_empresa = request.form.get("nome_empresa", "").strip()
+
+        if not cnpj or not nome_empresa:
+            return jsonify({'success': False, 'error': 'CNPJ e Nome da Empresa são obrigatórios.'}), 400
+
+        fornecedor_existente = FornecedorProdutos.query.filter(
+            FornecedorProdutos.cnpj == cnpj,
+            FornecedorProdutos.user_id == current_user.id,
+            FornecedorProdutos.id != fornecedor_id
+        ).first()
+
+        if fornecedor_existente:
+            return jsonify({'success': False, 'error': f'O CNPJ {cnpj} já está cadastrado em outro fornecedor.'}), 400
+
+        fornecedor.cnpj = cnpj
+        fornecedor.nome_empresa = nome_empresa
+        fornecedor.endereco = request.form.get("endereco", "").strip()
+        fornecedor.atividade_principal = request.form.get("atividade_principal", "").strip()
+        fornecedor.contato = request.form.get("contato", "").strip()
+        fornecedor.nome_vendedor = request.form.get("nome_vendedor", "").strip()
+        fornecedor.contato_vendedor = request.form.get("contato_vendedor", "").strip()
+        fornecedor.comentario = request.form.get("comentario", "").strip()
+
+        db.session.commit()
+
+        current_app.logger.info(f"Fornecedor {fornecedor_id} atualizado com sucesso pelo usuário {current_user.id}")
+        return jsonify({'success': True, 'message': 'Fornecedor atualizado com sucesso!'})
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao editar fornecedor {fornecedor_id}: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor ao tentar atualizar o fornecedor.'}), 500
+
+
+@app.route("/produtos_fornecedores/detalhes/<int:produto_id>", methods=["GET"])
+@login_required
+def get_produto_detalhes(produto_id):
+    """Retorna detalhes de um produto em JSON"""
+    try:
+        produto = ProdutosFornecedores.query.filter_by(id=produto_id, user_id=current_user.id).first()
+        if not produto:
+            return jsonify({"success": False, "error": "Produto não encontrado"}), 404
+
+        detalhes = ProdutoDetalhes.query.filter_by(produto_id=produto.id).first()
+
+        detalhes_dict = {
+            "id": produto.id,
+            "nome": produto.nome,
+            "marca": produto.marca,
+            "modelo": produto.modelo,
+            "unidade_medida": produto.unidade_medida,
+            "custo": float(produto.custo),
+            "fornecedor_id": produto.fornecedor_id,
+            "fornecedor_nome": produto.fornecedor.nome_empresa if produto.fornecedor else "N/A",
+            "descricao_detalhada": detalhes.descricao_detalhada if detalhes else "",
+            "foto_url": detalhes.foto_url if detalhes else ""
+        }
+        return jsonify({"success": True, "detalhes": detalhes_dict})
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao buscar detalhes do produto {produto_id}: {e}")
+        return jsonify({"success": False, "error": "Erro interno do servidor"}), 500
+
+
+@app.route("/produtos_fornecedores/upload_foto/<int:produto_id>", methods=["POST"])
+@login_required
+def upload_foto_produto(produto_id):
+    """Upload de foto para um produto"""
+    try:
+        produto = ProdutosFornecedores.query.filter_by(id=produto_id, user_id=current_user.id).first()
+        if not produto:
+            return jsonify({"success": False, "error": "Produto não encontrado"}), 404
+
+        if "foto" not in request.files:
+            return jsonify({"success": False, "error": "Nenhum arquivo de foto enviado"}), 400
+
+        foto = request.files["foto"]
+        if foto.filename == "":
+            return jsonify({"success": False, "error": "Nome do arquivo de foto vazio"}), 400
+
+        if foto and allowed_file(foto.filename):
+            filename = secure_filename(f"{produto_id}_{int(time.time())}_{foto.filename}")
+            upload_folder = os.path.join(current_app.root_path, "static", "uploads", "produtos")
+            os.makedirs(upload_folder, exist_ok=True)
+            filepath = os.path.join(upload_folder, filename)
+            foto.save(filepath)
+
+            # Atualizar ou criar ProdutoDetalhes
+            detalhes = ProdutoDetalhes.query.filter_by(produto_id=produto.id).first()
+            if not detalhes:
+                detalhes = ProdutoDetalhes(produto_id=produto.id)
+                db.session.add(detalhes)
+            detalhes.foto_url = url_for("static", filename=f"uploads/produtos/{filename}")
+            db.session.commit()
+
+            return jsonify({"success": True, "message": "Foto enviada com sucesso!", "foto_url": detalhes.foto_url})
+        else:
+            return jsonify({"success": False, "error": "Tipo de arquivo não permitido"}), 400
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao fazer upload da foto para o produto {produto_id}: {e}")
+        return jsonify({"success": False, "error": "Erro interno do servidor"}), 500
+
+
+@app.route("/produtos_fornecedores/salvar_descricao/<int:produto_id>", methods=["POST"])
+@login_required
+def salvar_descricao_produto(produto_id):
+    """Salva a descrição detalhada de um produto"""
+    try:
+        produto = ProdutosFornecedores.query.filter_by(id=produto_id, user_id=current_user.id).first()
+        if not produto:
+            return jsonify({"success": False, "error": "Produto não encontrado"}), 404
+
+        descricao = request.form.get("descricao", "").strip()
+
+        # Atualizar ou criar ProdutoDetalhes
+        detalhes = ProdutoDetalhes.query.filter_by(produto_id=produto.id).first()
+        if not detalhes:
+            detalhes = ProdutoDetalhes(produto_id=produto.id)
+            db.session.add(detalhes)
+        detalhes.descricao_detalhada = descricao
+        db.session.commit()
+
+        return jsonify({"success": True, "message": "Descrição salva com sucesso!"})
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao salvar a descrição para o produto {produto_id}: {e}")
+        return jsonify({"success": False, "error": "Erro interno do servidor"}), 500
+
+
+@app.route("/produtos_fornecedores/excluir_produto/<int:produto_id>", methods=["POST"])
+@login_required
+def excluir_produto_fornecedor(produto_id):
+    """Exclui um produto do fornecedor"""
+    try:
+        produto = ProdutosFornecedores.query.filter_by(id=produto_id, user_id=current_user.id).first()
+        if produto:
+            db.session.delete(produto)
+            db.session.commit()
+            flash("Produto excluído com sucesso!", "success")
+        else:
+            flash("Produto não encontrado!", "danger")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Erro ao excluir produto: {str(e)}", "danger")
+    return redirect(url_for("listar_produtos_fornecedores"))
+
+
+@app.route("/produtos_fornecedores/filtrar", methods=["GET"])
+@login_required
+def filtrar_produtos():
+    """Filtra produtos com base nos parâmetros fornecidos"""
+    try:
+        fornecedor_id = request.args.get("fornecedor_id")
+        busca = request.args.get("busca", "").strip()
+        preco_min = request.args.get("preco_min")
+        preco_max = request.args.get("preco_max")
+        status = request.args.get("status")
+
+        query = ProdutosFornecedores.query.filter_by(user_id=current_user.id)
+
+        if fornecedor_id:
+            try:
+                fornecedor_id = int(fornecedor_id)
+                query = query.filter_by(fornecedor_id=fornecedor_id)
+            except ValueError:
+                pass  # Ignorar fornecedor_id inválido
+
+        if busca:
+            search_term = f"%{busca}%"
+            query = query.filter(
+                (ProdutosFornecedores.nome.ilike(search_term)) |
+                (ProdutosFornecedores.marca.ilike(search_term)) |
+                (ProdutosFornecedores.modelo.ilike(search_term))
+            )
+
+        if preco_min:
+            try:
+                preco_min = float(preco_min)
+                query = query.filter(ProdutosFornecedores.custo >= preco_min)
+            except ValueError:
+                pass
+
+        if preco_max:
+            try:
+                preco_max = float(preco_max)
+                query = query.filter(ProdutosFornecedores.custo <= preco_max)
+            except ValueError:
+                pass
+
+        produtos = query.order_by(ProdutosFornecedores.nome).all()
+
+        fornecedores = FornecedorProdutos.query.filter_by(user_id=current_user.id).all()
+        fornecedores_dict = {f.id: f.nome_empresa for f in fornecedores}
+
+        produtos_formatados = []
+        for produto in produtos:
+            detalhes = ProdutoDetalhes.query.filter_by(produto_id=produto.id).first()
+            produto_dict = {
+                "id": produto.id,
+                "nome": produto.nome or "Nome não informado",
+                "marca": produto.marca or "",
+                "modelo": produto.modelo or "",
+                "unidade_medida": produto.unidade_medida or "UN",
+                "custo": float(produto.custo) if produto.custo else 0.0,
+                "fornecedor_id": produto.fornecedor_id,
+                "fornecedor_nome": fornecedores_dict.get(produto.fornecedor_id, "Sem fornecedor"),
+                "tem_foto": bool(detalhes and detalhes.foto_url),
+                "tem_descricao": bool(detalhes and detalhes.descricao_detalhada),
+                "foto_url": detalhes.foto_url if detalhes else None,
+                "descricao_preview": (
+                    detalhes.descricao_detalhada[:100] + "..."
+                    if detalhes and detalhes.descricao_detalhada and len(detalhes.descricao_detalhada) > 100
+                    else (detalhes.descricao_detalhada if detalhes else "")
+                )
+            }
+            produtos_formatados.append(produto_dict)
+
+        # Aplicar filtro de status após a formatação para ter acesso a tem_foto e tem_descricao
+        if status == "com-foto":
+            produtos_formatados = [p for p in produtos_formatados if p["tem_foto"]]
+        elif status == "sem-foto":
+            produtos_formatados = [p for p in produtos_formatados if not p["tem_foto"]]
+        elif status == "com-descricao":
+            produtos_formatados = [p for p in produtos_formatados if p["tem_descricao"]]
+        elif status == "sem-descricao":
+            produtos_formatados = [p for p in produtos_formatados if not p["tem_descricao"]]
+
+        return jsonify({"success": True, "produtos": produtos_formatados})
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao filtrar produtos para usuário {current_user.id}: {e}")
+        return jsonify({"success": False, "error": "Erro ao filtrar produtos."}), 500
+
+
+@app.route("/produtos_fornecedores/exportar_csv", methods=["GET"])
+@login_required
+def exportar_csv_produtos():
+    """Exporta os produtos para um arquivo CSV"""
+    try:
+        produtos = ProdutosFornecedores.query.filter_by(user_id=current_user.id).all()
+
+        # Usar StringIO para criar o CSV em memória
+        si = io.StringIO()
+        cw = csv.writer(si, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+
+        # Cabeçalho
+        cw.writerow(["Nome", "Marca", "Modelo", "Unidade de Medida", "Custo", "Fornecedor"])
+
+        # Dados
+        for produto in produtos:
+            fornecedor_nome = produto.fornecedor.nome_empresa if produto.fornecedor else ""
+            cw.writerow([
+                produto.nome,
+                produto.marca,
+                produto.modelo,
+                produto.unidade_medida,
+                str(produto.custo).replace('.', ','),  # Formato brasileiro
+                fornecedor_nome
+            ])
+
+        # Criar resposta
+        output = make_response(si.getvalue().encode('utf-8'))
+        output.headers["Content-Disposition"] = "attachment; filename=produtos.csv"
+        output.headers["Content-type"] = "text/csv; charset=utf-8"
+
+        return output
+
+    except Exception as e:
+        flash(f'Erro ao exportar CSV: {str(e)}', 'danger')
+        current_app.logger.error(f"Erro na exportação de CSV: {e}")
+        return redirect(url_for('listar_produtos_fornecedores'))
+
+
+@app.route('/download_modelo_csv', methods=['GET'])
+@login_required
+def download_modelo_csv():
+    """Gera um modelo CSV melhorado com informações dos fornecedores"""
+    try:
+        # Buscar fornecedores do usuário para incluir no modelo
+        fornecedores = FornecedorProdutos.query.filter_by(user_id=current_user.id).all()
+
+        # Definir os cabeçalhos do CSV
+        fieldnames = ["nome", "marca", "modelo", "unidade_medida", "custo", "fornecedor_id"]
+
+        # Criar um arquivo CSV em memória
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=";")
+
+        writer.writeheader()
+
+        # Exemplo de linha para o usuário entender o formato
+        writer.writerow({
+            "nome": "Nome do Produto Exemplo",
+            "marca": "Marca Exemplo",
+            "modelo": "Modelo Exemplo",
+            "unidade_medida": "UN",
+            "custo": "123.45",
+            "fornecedor_id": f"{fornecedores[0].id if fornecedores else 'ID_DO_FORNECEDOR'}"
+        })
+
+        # Adicionar linha em branco
+        writer.writerow({})
+
+        # Adicionar comentário com lista de fornecedores
+        writer.writerow({
+            "nome": "# FORNECEDORES DISPONÍVEIS:",
+            "marca": "",
+            "modelo": "",
+            "unidade_medida": "",
+            "custo": "",
+            "fornecedor_id": ""
+        })
+
+        # Listar todos os fornecedores disponíveis
+        for fornecedor in fornecedores:
+            writer.writerow({
+                "nome": f"# ID: {fornecedor.id}",
+                "marca": f"Empresa: {fornecedor.nome_empresa}",
+                "modelo": f"CNPJ: {fornecedor.cnpj}",
+                "unidade_medida": "",
+                "custo": "",
+                "fornecedor_id": f"Use ID: {fornecedor.id}"
+            })
+
+        if not fornecedores:
+            writer.writerow({
+                "nome": "# Nenhum fornecedor cadastrado",
+                "marca": "Cadastre fornecedores primeiro",
+                "modelo": "",
+                "unidade_medida": "",
+                "custo": "",
+                "fornecedor_id": ""
+            })
+
+        # Retornar o arquivo como resposta
+        mem = io.BytesIO()
+        mem.write(output.getvalue().encode('utf-8-sig'))  # BOM para Excel
+        mem.seek(0)
+
+        return send_file(
+            mem,
+            as_attachment=True,
+            download_name=f"modelo_produtos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mimetype="text/csv"
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao gerar modelo CSV: {e}")
+        flash("Erro ao gerar modelo CSV.", "danger")
+        return redirect(url_for('listar_produtos_fornecedores'))
+
+
+# Em app.py, substitua a função importar_produtos_csv por esta:
+
+@app.route('/importar_produtos_csv', methods=['POST'])
+@login_required
+def importar_produtos_csv():
+    """Importa produtos de um arquivo CSV - VERSÃO OTIMIZADA E SIMPLIFICADA"""
+    try:
+        current_app.logger.info(f"Iniciando importação CSV para usuário {current_user.id}")
+
+        if 'file' not in request.files:
+            flash("Nenhum arquivo enviado.", "danger")
+            return redirect(url_for('listar_produtos_fornecedores'))
+
+        file = request.files['file']
+        if file.filename == '':
+            flash("Nenhum arquivo selecionado.", "danger")
+            return redirect(url_for('listar_produtos_fornecedores'))
+
+        # Validação da extensão do arquivo
+        if not '.' in file.filename or file.filename.rsplit('.', 1)[1].lower() != 'csv':
+            flash("Tipo de arquivo não permitido. Apenas arquivos CSV são aceitos.", "danger")
+            return redirect(url_for('listar_produtos_fornecedores'))
+
+        # Salvar arquivo temporariamente para análise
+        temp_dir = tempfile.mkdtemp()
+        temp_filepath = os.path.join(temp_dir, secure_filename(file.filename))
+        file.save(temp_filepath)
+        current_app.logger.info(f"Arquivo salvo temporariamente: {temp_filepath}")
+
+        # Detectar encoding e delimitador
+        encoding = detectar_encoding(temp_filepath)
+        current_app.logger.info(f"Encoding detectado: {encoding}")
+        with open(temp_filepath, 'r', encoding=encoding) as f:
+            sample = f.read(2048)  # Amostra maior para garantir a detecção
+            delimiter = detectar_delimitador(sample)
+        current_app.logger.info(f"Delimitador detectado: '{delimiter}'")
+
+        total_importados = 0
+        total_erros = 0
+        erros_detalhes = []
+
+        # Obter um dicionário de fornecedores do usuário para consulta rápida
+        fornecedores_usuario = {f.id: f for f in FornecedorProdutos.query.filter_by(user_id=current_user.id).all()}
+
+        with open(temp_filepath, 'r', encoding=encoding) as csvfile:
+            reader = csv.DictReader(csvfile, delimiter=delimiter)
+
+            if not reader.fieldnames:
+                flash("Arquivo CSV vazio ou sem cabeçalhos.", "danger")
+                return redirect(url_for('listar_produtos_fornecedores'))
+
+            current_app.logger.info(f"Colunas encontradas: {reader.fieldnames}")
+
+            # Mapeamento flexível de colunas
+            col_mapping = {
+                'nome': next((f for f in reader.fieldnames if 'nome' in f.lower() or 'produto' in f.lower()), None),
+                'marca': next((f for f in reader.fieldnames if 'marca' in f.lower()), None),
+                'modelo': next((f for f in reader.fieldnames if 'modelo' in f.lower()), None),
+                'unidade_medida': next(
+                    (f for f in reader.fieldnames if 'unidade' in f.lower() or 'medida' in f.lower()), None),
+                'custo': next((f for f in reader.fieldnames if
+                               'custo' in f.lower() or 'preço' in f.lower() or 'valor' in f.lower()), None),
+                'fornecedor_id': next(
+                    (f for f in reader.fieldnames if 'fornecedor_id' in f.lower() or 'id_fornecedor' in f.lower()),
+                    None)
+            }
+
+            if not col_mapping['nome'] or not col_mapping['custo']:
+                flash(
+                    "O arquivo CSV deve conter colunas para 'nome' e 'custo' (ou variações como 'produto', 'preço', 'valor').",
+                    "danger")
+                return redirect(url_for('listar_produtos_fornecedores'))
+
+            for i, row in enumerate(reader):
+                linha_num = i + 2
+                try:
+                    nome = row.get(col_mapping['nome'], '').strip()
+                    custo_str = row.get(col_mapping['custo'], '').strip()
+
+                    if not nome or not custo_str:
+                        erros_detalhes.append(f"Linha {linha_num}: Nome ou custo em branco.")
+                        total_erros += 1
+                        continue
+
+                    custo = processar_valor_monetario(custo_str)
+                    if custo <= 0:
+                        erros_detalhes.append(f"Linha {linha_num}: Custo '{custo_str}' inválido.")
+                        total_erros += 1
+                        continue
+
+                    fornecedor_id = None
+                    if col_mapping['fornecedor_id'] and row.get(col_mapping['fornecedor_id']):
+                        try:
+                            f_id = int(row[col_mapping['fornecedor_id']].strip())
+                            if f_id in fornecedores_usuario:
+                                fornecedor_id = f_id
+                            else:
+                                raise ValueError("ID de fornecedor não pertence ao usuário.")
+                        except (ValueError, TypeError):
+                            erros_detalhes.append(
+                                f"Linha {linha_num}: ID de fornecedor '{row[col_mapping['fornecedor_id']]}' inválido ou não encontrado.")
+                            total_erros += 1
+                            continue
+
+                    # Cria o produto
+                    novo_produto = ProdutosFornecedores(
+                        nome=nome,
+                        marca=row.get(col_mapping['marca'], '').strip() or None,
+                        modelo=row.get(col_mapping['modelo'], '').strip() or None,
+                        unidade_medida=row.get(col_mapping['unidade_medida'], 'UN').strip(),
+                        custo=custo,
+                        fornecedor_id=fornecedor_id,
+                        user_id=current_user.id
+                    )
+                    db.session.add(novo_produto)
+                    total_importados += 1
+
+                except Exception as e:
+                    total_erros += 1
+                    erros_detalhes.append(f"Linha {linha_num}: {str(e)}")
+                    db.session.rollback()
+
+        if total_importados > 0:
+            db.session.commit()
+
+        # Limpar arquivos temporários
+        try:
+            os.remove(temp_filepath)
+            os.rmdir(temp_dir)
+        except OSError as e:
+            current_app.logger.error(f"Erro ao limpar arquivos temporários: {e}")
+
+        # Mensagens de feedback
+        if total_erros == 0 and total_importados > 0:
+            flash(f"Importação concluída com sucesso! {total_importados} produtos foram importados.", "success")
+        elif total_importados > 0 and total_erros > 0:
+            flash(
+                f"Importação parcial: {total_importados} produtos importados e {total_erros} erros. Detalhes: {'; '.join(erros_detalhes[:3])}...",
+                "warning")
+        else:
+            flash(f"A importação falhou. {total_erros} erros encontrados. Detalhes: {'; '.join(erros_detalhes[:3])}...",
+                  "danger")
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro geral na importação de CSV: {e}", exc_info=True)
+        flash(f"Ocorreu um erro inesperado ao processar o arquivo CSV: {str(e)}", "danger")
+
+    return redirect(url_for('listar_produtos_fornecedores'))
+
+
+def gerar_pdf_catalogo_melhorado(produtos, fornecedores_dict, filepath, titulo):
+    """
+    Gera PDF do catálogo de produtos com cabeçalho padrão da empresa,
+    fotos dos produtos e descrições detalhadas — descrição em TABELA, com
+    normalização de espaços e quebra entre páginas.
+    """
+    try:
+        from models import Empresa
+        from flask_login import current_user
+        from flask import current_app
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+        from io import BytesIO
+        from datetime import datetime
+        from html import escape
+        import os, re  # <-- usa 're' para normalizar espaços
+
+        def resolver_caminho_absoluto_da_foto(foto_url: str) -> str:
+            if not foto_url:
+                return None
+            foto_url = foto_url.lstrip("/")
+            if foto_url.startswith("precificaja/"):
+                foto_url = foto_url.replace("precificaja/", "", 1)
+            base_dir = os.path.abspath(os.path.dirname(__file__))
+            return os.path.join(base_dir, foto_url)
+
+        # ===== helper: fatia a descrição em blocos para a tabela poder quebrar por linha =====
+        def fatiar_texto_em_blocos(texto: str, max_chars: int = 900):
+            """
+            Divide o texto em blocos ~max_chars SEM cortar palavras, para que
+            cada bloco vire UMA LINHA da tabela (facilitando quebra entre páginas).
+            """
+            palavras = texto.split()
+            if not palavras:
+                return []
+            blocos = []
+            atual = palavras[0]
+            for p in palavras[1:]:
+                if len(atual) + 1 + len(p) <= max_chars:
+                    atual += " " + p
+                else:
+                    blocos.append(atual)
+                    atual = p
+            if atual:
+                blocos.append(atual)
+            return blocos
+
+        user_principal_id = (
+            current_user.user_principal_id if hasattr(current_user,
+                                                      'user_principal_id') and current_user.user_principal_id
+            else current_user.id
+        )
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        if not empresa:
+            current_app.logger.error('Configure sua empresa para gerar catálogos.')
+            raise Exception('Empresa não configurada')
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            topMargin=20 * mm,
+            bottomMargin=20 * mm,
+            leftMargin=20 * mm,
+            rightMargin=20 * mm
+        )
+
+        story = []
+        styles = getSampleStyleSheet()
+
+        # ===== CABEÇALHO COM LOGO =====
+        if empresa.logo and os.path.exists(empresa.logo):
+            try:
+                logo = Image(empresa.logo, width=60 * mm, height=40 * mm)
+                logo.hAlign = 'CENTER'
+                story.append(logo)
+                story.append(Spacer(1, 10 * mm))
+            except Exception as e:
+                current_app.logger.warning(f"Falha ao carregar logo no catálogo: {e}")
+
+        # ===== DADOS DA EMPRESA =====
+        empresa_style = ParagraphStyle(
+            'EmpresaStyle',
+            parent=styles['Normal'],
+            fontSize=10,
+            alignment=1,  # Center
+            spaceAfter=3
+        )
+
+        def p(texto):
+            return Paragraph(texto, empresa_style)
+
+        story.append(Paragraph(f"<b>{escape(empresa.razao_social or '')}</b>", empresa_style))
+        if empresa.cnpj:
+            story.append(p(f"CNPJ: {escape(empresa.cnpj)}"))
+        if empresa.endereco:
+            story.append(p(escape(empresa.endereco)))
+        if getattr(empresa, "telefone", None):
+            story.append(p(f"Tel: {escape(empresa.telefone)}"))
+        if getattr(empresa, "email", None):
+            story.append(p(f"E-mail: {escape(empresa.email)}"))
+
+        story.append(Spacer(1, 10 * mm))
+
+        # ===== TÍTULO =====
+        title_style = ParagraphStyle(
+            'CatalogoTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            spaceAfter=20,
+            alignment=1,
+            textColor=colors.darkblue
+        )
+        story.append(Paragraph(escape(titulo).upper(), title_style))
+        story.append(Spacer(1, 6 * mm))
+
+        # ===== ESTILOS =====
+        meta_label_style = ParagraphStyle('MetaLabel', parent=styles['Normal'], fontSize=9, textColor=colors.black)
+        meta_val_style = ParagraphStyle('MetaVal', parent=styles['Normal'], fontSize=9)
+        desc_label_style = ParagraphStyle('DescLabel', parent=styles['Normal'], fontSize=9, leading=12)
+        desc_body_style = ParagraphStyle('DescBody', parent=styles['Normal'], fontSize=9, leading=12, wordWrap='LTR')
+
+        # ===== PRODUTOS =====
+        for i, produto in enumerate(produtos, 1):
+            fornecedor_nome = fornecedores_dict.get(getattr(produto, "fornecedor_id", None), 'N/A')
+            detalhes = getattr(produto, "detalhes_rel", None)
+
+            # --- Tabela de metadados (SEM descrição aqui) ---
+            produto_data = [
+                [Paragraph("<b>Item</b>", meta_label_style), Paragraph(f"<b>{i:03d}</b>", meta_val_style)],
+                [Paragraph("Produto:", meta_label_style),
+                 Paragraph(escape(produto.nome or 'Nome não informado'), meta_val_style)],
+                [Paragraph("Marca/Modelo:", meta_label_style),
+                 Paragraph(escape(f"{produto.marca or 'N/A'} {produto.modelo or 'N/A'}".strip()), meta_val_style)],
+                [Paragraph("Unidade:", meta_label_style),
+                 Paragraph(escape(produto.unidade_medida or 'UN'), meta_val_style)],
+                [Paragraph("Fornecedor:", meta_label_style), Paragraph(escape(fornecedor_nome), meta_val_style)],
+            ]
+
+            meta_table = Table(produto_data, colWidths=[40 * mm, 130 * mm])
+            meta_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]))
+
+            bloco = [meta_table]
+
+            # Foto (se houver) — mantém junto com metadados
+            if detalhes and getattr(detalhes, "foto_url", None):
+                foto_path = resolver_caminho_absoluto_da_foto(detalhes.foto_url)
+                if foto_path and os.path.exists(foto_path):
+                    try:
+                        img = Image(foto_path, width=40 * mm, height=30 * mm)
+                        img.hAlign = 'LEFT'
+                        bloco.extend([Spacer(1, 3 * mm), img])
+                    except Exception as e:
+                        current_app.logger.error(
+                            f"Erro ao carregar imagem do produto {getattr(produto, 'id', '?')}: {e}")
+
+            # Mantém metadados+foto juntos
+            story.append(KeepTogether(bloco))
+
+            # --- Descrição em TABELA, com normalização e múltiplas linhas (quebra entre páginas) ---
+            if detalhes and detalhes.descricao_detalhada and detalhes.descricao_detalhada.strip():
+                # 1) normaliza espaços e quebras de linha -> "uma palavra ao lado da outra"
+                # ex: "teste \num\ndos \nbons." -> "teste um dos bons."
+                descricao_norm = re.sub(r'\s+', ' ', detalhes.descricao_detalhada).strip()
+
+                # 2) divide em blocos para facilitar a quebra da TABELA entre páginas
+                blocos = fatiar_texto_em_blocos(descricao_norm, max_chars=900)
+
+                # 3) monta linhas da tabela: primeira com rótulo, demais com rótulo vazio
+                desc_rows = []
+                for idx, chunk in enumerate(blocos):
+                    label = "<b>Descrição:</b>" if idx == 0 else ""
+                    desc_rows.append([
+                        Paragraph(label, desc_label_style),
+                        Paragraph(escape(chunk), desc_body_style)
+                    ])
+
+                desc_table = Table(desc_rows, colWidths=[40 * mm, 130 * mm])
+                desc_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),  # coluna do rótulo
+                    ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                    ('TOPPADDING', (0, 0), (-1, -1), 3),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ]))
+
+                # Importante: NÃO envolver a desc_table em KeepTogether,
+                # para que ela possa quebrar entre páginas por linha.
+                story.append(desc_table)
+
+            story.append(Spacer(1, 8 * mm))
+
+        # ===== RODAPÉ =====
+        footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, alignment=1, textColor=colors.grey)
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph(f"Catálogo gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}", footer_style))
+        story.append(Paragraph(f"Total de produtos: {len(produtos)}", footer_style))
+
+        # Gerar PDF
+        doc.build(story)
+        buffer.seek(0)
+
+        with open(filepath, 'wb') as f:
+            f.write(buffer.getvalue())
+        buffer.close()
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao gerar PDF: {e}")
+        raise
+
+
+# ============================================================================
+# ROTAS ATUALIZADAS PARA USAR A NOVA FUNÇÃO
+# ============================================================================
+
+@app.route('/gerar_catalogo_todos', methods=['GET'])
+@login_required
+def gerar_catalogo_todos():
+    """Gera catálogo PDF com todos os produtos do usuário - VERSÃO MELHORADA"""
+    try:
+        # Buscar todos os produtos do usuário
+        produtos = ProdutosFornecedores.query.filter_by(user_id=current_user.id).order_by(
+            ProdutosFornecedores.nome).all()
+
+        if not produtos:
+            flash("Nenhum produto encontrado para gerar catálogo.", "warning")
+            return redirect(url_for('listar_produtos_fornecedores'))
+
+        # Buscar fornecedores
+        fornecedores = FornecedorProdutos.query.filter_by(user_id=current_user.id).all()
+        fornecedores_dict = {f.id: f.nome_empresa for f in fornecedores}
+
+        # Gerar PDF
+        filename = f"catalogo_completo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filepath = os.path.join(tempfile.gettempdir(), filename)
+
+        gerar_pdf_catalogo_melhorado(produtos, fornecedores_dict, filepath, "Catálogo Completo de Produtos")
+
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao gerar catálogo completo: {e}")
+        flash("Erro ao gerar catálogo completo.", "danger")
+        return redirect(url_for('listar_produtos_fornecedores'))
+
+
+# NOVA ROTA PARA CATÁLOGO DA SIMULAÇÃO (substituir a existente)
+from sqlalchemy.orm import joinedload
+import unicodedata, re
+
+
+def _normalize(txt: str) -> str:
+    txt = txt or ''
+    txt = unicodedata.normalize('NFKD', txt).encode('ascii', 'ignore').decode('ascii')
+    return re.sub(r'[^a-z0-9]+', ' ', txt.lower()).strip()
+
+
+@app.route('/simulacao/<int:registro_id>/catalogo_pdf', methods=['GET'])
+@login_required
+def gerar_catalogo_simulacao(registro_id):
+    """Gerar catálogo PDF dos produtos da simulação específica (com foto e descrição do catálogo)"""
+    try:
+        # Verificar acesso
+        user_principal_id = (current_user.user_principal_id
+                             if session.get('user_type') == 'subusuario'
+                             else current_user.id)
+
+        registro = CalculadoraPasso1.query.filter_by(id=registro_id, user_id=user_principal_id).first()
+        if not registro:
+            flash('Simulação não encontrada.', 'error')
+            return redirect(url_for('simulacao'))
+
+        # Produtos da simulação
+        produtos_simulacao = Produto.query.filter_by(calculadora_passo1_id=registro_id).all()
+        if not produtos_simulacao:
+            flash('Nenhum produto encontrado na simulação.', 'warning')
+            return redirect(url_for('simulacao'))
+
+        # ===== Catálogo do usuário (eager load de detalhes e fornecedor) =====
+        catalogo = (ProdutosFornecedores.query
+                    .options(
+            joinedload(ProdutosFornecedores.detalhes_rel),
+            joinedload(ProdutosFornecedores.fornecedor)
+        )
+                    .filter_by(user_id=user_principal_id)
+                    .all())
+
+        # Mapas para resolução rápida
+        pf_por_id = {pf.id: pf for pf in catalogo}
+        nome_map = {}
+        for pf in catalogo:
+            k = _normalize(pf.nome)
+            if not k:
+                continue
+            nome_map.setdefault(k, []).append(pf)
+
+        # Resolver pf para cada item
+        produtos_catalogo = []
+        for produto_simulacao in produtos_simulacao:
+            pf = None
+
+            # 1) Vínculo persistido
+            pf_id = getattr(produto_simulacao, 'produto_fornecedor_id', None)
+            if pf_id:
+                pf = pf_por_id.get(pf_id)
+
+            # 2) Fallback por nome (normalizado) + desempate por marca/modelo
+            if not pf:
+                key = _normalize(getattr(produto_simulacao, 'nome', ''))
+                candidatos = list(nome_map.get(key, []))
+                if len(candidatos) > 1:
+                    alvo_mm = _normalize(getattr(produto_simulacao, 'marca_modelo', ''))
+                    if alvo_mm:
+                        tokens = set(t for t in alvo_mm.split() if t)
+
+                        def score(x):
+                            pf_mm = _normalize(f"{x.marca or ''} {x.modelo or ''}")
+                            return len(tokens.intersection(set(pf_mm.split())))
+
+                        candidatos.sort(key=score, reverse=True)
+                        # pega o de maior sobreposição se houver diferença
+                        if score(candidatos[0]) > 0:
+                            pf = candidatos[0]
+                        else:
+                            pf = candidatos[0]  # ainda escolhe um para não ficar sem
+                elif len(candidatos) == 1:
+                    pf = candidatos[0]
+
+            # 3) Detalhes (foto/descrição)
+            detalhes = None
+            if pf:
+                detalhes = getattr(pf, 'detalhes_rel', None)
+                # fallback defensivo (se relacionamento não estiver mapeado)
+                if not detalhes:
+                    detalhes = ProdutoDetalhes.query.filter_by(produto_id=pf.id).first()
+
+            produtos_catalogo.append({
+                'produto_simulacao': produto_simulacao,
+                'produto_fornecedor': pf,
+                'detalhes': detalhes
+            })
+
+        # Empresa
+        empresa = Empresa.query.filter_by(user_id=user_principal_id).first()
+        if not empresa:
+            flash('Configure sua empresa para gerar catálogos.', 'error')
+            return redirect(url_for('simulacao'))
+
+        def resolver_caminho_absoluto_da_foto(foto_url: str) -> str:
+            if not foto_url:
+                return None
+            foto_url = foto_url.lstrip("/")
+            if foto_url.startswith("precificaja/"):
+                foto_url = foto_url.replace("precificaja/", "", 1)
+            base_dir = os.path.abspath(os.path.dirname(__file__))
+            return os.path.join(base_dir, foto_url)
+
+        # ===== ReportLab =====
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+        from io import BytesIO
+        import os
+        from datetime import datetime
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, pagesize=A4,
+            topMargin=20 * mm, bottomMargin=20 * mm,
+            leftMargin=20 * mm, rightMargin=20 * mm
+        )
+
+        story = []
+        styles = getSampleStyleSheet()
+
+        # Cabeçalho com logo
+        if empresa.logo and os.path.exists(empresa.logo):
+            try:
+                logo = Image(empresa.logo, width=60 * mm, height=40 * mm)
+                logo.hAlign = 'CENTER'
+                story.append(logo)
+                story.append(Spacer(1, 10 * mm))
+            except Exception as e:
+                current_app.logger.warning(f"Falha ao carregar logo: {e}")
+
+        empresa_style = ParagraphStyle('EmpresaStyle', parent=styles['Normal'], fontSize=10, alignment=1, spaceAfter=3)
+        story.append(Paragraph(f"<b>{empresa.razao_social}</b>", empresa_style))
+        if empresa.cnpj:     story.append(Paragraph(f"CNPJ: {empresa.cnpj}", empresa_style))
+        if empresa.endereco: story.append(Paragraph(empresa.endereco, empresa_style))
+        if getattr(empresa, 'telefone', None): story.append(Paragraph(f"Tel: {empresa.telefone}", empresa_style))
+        if getattr(empresa, 'email', None):    story.append(Paragraph(f"E-mail: {empresa.email}", empresa_style))
+        story.append(Spacer(1, 10 * mm))
+
+        title_style = ParagraphStyle('CatalogoTitle', parent=styles['Heading1'], fontSize=16, spaceAfter=20,
+                                     alignment=1, textColor=colors.darkblue)
+        story.append(Paragraph(f"CATÁLOGO DE PRODUTOS {registro_id}", title_style))
+        story.append(Spacer(1, 10 * mm))
+
+        # Produtos
+        for i, item in enumerate(produtos_catalogo, 1):
+            produto_simulacao = item['produto_simulacao']
+            produto_fornecedor = item['produto_fornecedor']
+            detalhes = item['detalhes']
+
+            produto_data = []
+            produto_data.append([
+                Paragraph(f"<b>Item {i:03d}</b>", styles['Normal']),
+                Paragraph(f"<b>{produto_simulacao.nome}</b>", styles['Normal'])
+            ])
+
+            marca_modelo = produto_simulacao.marca_modelo or ""
+            if produto_fornecedor and (produto_fornecedor.marca or produto_fornecedor.modelo):
+                marca_modelo = f"{produto_fornecedor.marca or ''} {produto_fornecedor.modelo or ''}".strip()
+
+            produto_data.append([Paragraph("Marca/Modelo:", styles['Normal']),
+                                 Paragraph(marca_modelo or "-", styles['Normal'])])
+
+            unidade = produto_simulacao.unidade_medida or (
+                produto_fornecedor.unidade_medida if produto_fornecedor else 'UN')
+            produto_data.append([Paragraph("Quantidade:", styles['Normal']),
+                                 Paragraph(f"{produto_simulacao.quantidade} {unidade}", styles['Normal'])])
+
+            # Valor unitário (Decimal -> BR)
+            try:
+                venda_val = float(produto_simulacao.venda)
+            except Exception:
+                venda_val = 0.0
+            venda_fmt = f"R$ {venda_val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            produto_data.append(
+                [Paragraph("Valor Unitário:", styles['Normal']), Paragraph(venda_fmt, styles['Normal'])])
+
+            if produto_simulacao.numero_item:
+                produto_data.append([Paragraph("Número do Item:", styles['Normal']),
+                                     Paragraph(str(produto_simulacao.numero_item), styles['Normal'])])
+
+            produto_table = Table(produto_data, colWidths=[40 * mm, 130 * mm])
+            produto_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            story.append(produto_table)
+
+            # Foto (se houver)
+            foto_encontrada = False
+            if detalhes and detalhes.foto_url:
+                caminhos_possiveis = [
+                    resolver_caminho_absoluto_da_foto(detalhes.foto_url),
+                    detalhes.foto_url.replace('/static/', 'static/'),
+                    detalhes.foto_url.lstrip('/'),
+                    os.path.join('static', detalhes.foto_url.lstrip('/static/')),
+                    detalhes.foto_url
+                ]
+                for caminho in caminhos_possiveis:
+                    if caminho and os.path.exists(caminho):
+                        try:
+                            story.append(Spacer(1, 3 * mm))
+                            foto = Image(caminho, width=40 * mm, height=30 * mm)
+                            foto.hAlign = 'LEFT'
+                            story.append(foto)
+                            foto_encontrada = True
+                            break
+                        except Exception as e:
+                            current_app.logger.warning(f"Erro ao carregar imagem '{caminho}': {e}")
+                if not foto_encontrada:
+                    current_app.logger.warning(f"Imagem não encontrada para produto simulação {produto_simulacao.id}")
+
+            # Descrição (se houver)
+            if detalhes and detalhes.descricao_detalhada:
+                story.append(Spacer(1, 3 * mm))
+                desc_style = ParagraphStyle('Description', parent=styles['Normal'], fontSize=8,
+                                            leftIndent=5 * mm, rightIndent=5 * mm, spaceAfter=3,
+                                            wordWrap='LTR', allowWidows=1, allowOrphans=1)
+                descricao = detalhes.descricao_detalhada.strip()
+                # limite opcional para não explodir páginas
+                if len(descricao) > 1200:
+                    descricao = descricao[:1200] + "..."
+                story.append(Paragraph("<b>Descrição:</b>", desc_style))
+                for paragrafo in descricao.splitlines():
+                    if paragrafo.strip():
+                        story.append(Paragraph(paragrafo.strip(), desc_style))
+
+            story.append(Spacer(1, 8 * mm))
+
+        # Rodapé
+        footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, alignment=1, textColor=colors.grey)
+        story.append(Spacer(1, 10 * mm))
+        story.append(Paragraph(f"Catálogo gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}", footer_style))
+        story.append(
+            Paragraph(f"Simulação ID: {registro_id} | Total de produtos: {len(produtos_catalogo)}", footer_style))
+
+        # PDF
+        doc.build(story)
+        buffer.seek(0)
+
+        # Resposta
+        from flask import make_response
+        response = make_response(buffer.getvalue())
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = (
+            f'attachment; filename=catalogo_simulacao_{registro_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
+        )
+        return response
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao gerar catálogo da simulação: {e}", exc_info=True)
+        flash('Erro ao gerar catálogo PDF.', 'error')
+        return redirect(url_for('simulacao'))
+
+
+@app.route('/gerar_catalogo_selecionados', methods=['POST'])
+@login_required
+def gerar_catalogo_selecionados():
+    """Gera catálogo PDF com produtos selecionados - com validações robustas e URL relativa."""
+    try:
+        # 1) JSON seguro
+        data = request.get_json(silent=True) or {}
+        produto_ids_raw = data.get('produto_ids') or []
+
+        # 2) Normaliza/valida IDs (garante lista de ints)
+        try:
+            produto_ids = [int(x) for x in produto_ids_raw if str(x).strip() != ""]
+        except Exception:
+            current_app.logger.warning(f"[CAT-SEL] produto_ids inválidos: {produto_ids_raw}")
+            return jsonify({"success": False, "error": "IDs de produtos inválidos."}), 400
+
+        if not produto_ids:
+            return jsonify({"success": False, "error": "Nenhum produto selecionado."}), 400
+
+        current_app.logger.info(
+            f"[CAT-SEL] user={current_user.id} -> {len(produto_ids)} ids: {produto_ids}"
+        )
+
+        # 3) Eager loading + filtro por usuário
+        produtos = (
+            ProdutosFornecedores.query.options(
+                db.joinedload(ProdutosFornecedores.detalhes_rel)
+            )
+            .filter(
+                ProdutosFornecedores.user_id == current_user.id,
+                ProdutosFornecedores.id.in_(produto_ids)
+            )
+            .order_by(ProdutosFornecedores.nome)
+            .all()
+        )
+
+        if not produtos:
+            return jsonify({"success": False, "error": "Produtos selecionados não encontrados."}), 404
+
+        # 4) Fornecedores
+        fornecedores = FornecedorProdutos.query.filter_by(user_id=current_user.id).all()
+        fornecedores_dict = {f.id: f.nome_empresa for f in fornecedores}
+
+        # 5) Gera PDF no /tmp
+        filename = f"catalogo_selecionados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filepath = os.path.join(tempfile.gettempdir(), filename)
+
+        current_app.logger.info(f"[CAT-SEL] Gerando PDF com {len(produtos)} produtos -> {filepath}")
+
+        gerar_pdf_catalogo_melhorado(
+            produtos,
+            fornecedores_dict,
+            filepath,
+            f"Catálogo de Produtos Selecionados ({len(produtos)} itens)"
+        )
+
+        # 6) IMPORTANTE: URL RELATIVA (não usa _external) para não perder cookie
+        download_url = url_for("download_catalogo_temp", filename=filename)
+
+        return jsonify({
+            "success": True,
+            "download_url": download_url,
+            "message": f"Catálogo gerado com {len(produtos)} produtos!"
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("[CAT-SEL] Erro ao gerar catálogo selecionados")
+        return jsonify({"success": False, "error": f"Erro ao gerar catálogo: {str(e)}"}), 500
+
+
+@app.route('/download_catalogo/<filename>')
+@login_required
+def download_catalogo_temp(filename):
+    """Download de arquivo de catálogo temporário"""
+    try:
+        filepath = os.path.join(tempfile.gettempdir(), filename)
+        if not os.path.exists(filepath):
+            flash("Arquivo não encontrado.", "danger")
+            return redirect(url_for('listar_produtos_fornecedores'))
+
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+    except Exception as e:
+        current_app.logger.error(f"Erro ao baixar catálogo: {e}")
+        flash("Erro ao baixar catálogo.", "danger")
+        return redirect(url_for('listar_produtos_fornecedores'))
+
+
+# ============================================================================
+# FUNÇÃO AUXILIAR PARA GERAR PDF
+# ============================================================================
+
+def gerar_pdf_catalogo(produtos, fornecedores_dict, filepath, titulo):
+    """Gera PDF do catálogo de produtos"""
+    try:
+        doc = SimpleDocTemplate(filepath, pagesize=A4)
+        story = []
+        styles = getSampleStyleSheet()
+
+        # Estilo personalizado para título
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            textColor=colors.darkblue
+        )
+
+        # Título
+        story.append(Paragraph(titulo, title_style))
+        story.append(Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y às %H:%M')}", styles['Normal']))
+        story.append(Spacer(1, 20))
+
+        # Dados da tabela
+        data = [['#', 'Produto', 'Marca/Modelo', 'Unidade', 'Custo', 'Fornecedor']]
+
+        for i, produto in enumerate(produtos, 1):
+            marca_modelo = f"{produto.marca or 'N/A'} / {produto.modelo or 'N/A'}"
+            fornecedor = fornecedores_dict.get(produto.fornecedor_id, 'N/A')
+            custo = f"R$ {produto.custo:.2f}" if produto.custo else "R$ 0,00"
+
+            data.append([
+                str(i),
+                produto.nome or 'N/A',
+                marca_modelo,
+                produto.unidade_medida or 'UN',
+                custo,
+                fornecedor
+            ])
+
+        # Criar tabela
+        table = Table(data, colWidths=[0.5 * inch, 2 * inch, 1.5 * inch, 0.8 * inch, 0.8 * inch, 1.5 * inch])
+
+        # Estilo da tabela
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        story.append(table)
+
+        # Rodapé
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(f"Total de produtos: {len(produtos)}", styles['Normal']))
+
+        # Gerar PDF
+        doc.build(story)
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao gerar PDF: {e}")
+        raise
+
+
+# ============================================================================
+# FUNÇÕES AUXILIARES
+# ============================================================================
+
+def processar_valor_monetario(valor_str):
+    """Processa valores monetários de diferentes formatos"""
+    if not valor_str:
+        return 0.0
+
+    try:
+        valor_str = str(valor_str).strip()
+        if not valor_str or valor_str.lower() in ['nan', 'null', 'none', '']:
+            return 0.0
+
+        # Remover símbolos de moeda
+        valor_limpo = valor_str.replace('R$', '').replace('$', '').strip()
+        valor_limpo = re.sub(r'[^\d,.-]', '', valor_limpo)
+
+        if not valor_limpo:
+            return 0.0
+
+        # Processar formato brasileiro (vírgula como decimal)
+        if ',' in valor_limpo and '.' in valor_limpo:
+            if valor_limpo.rfind(',') > valor_limpo.rfind('.'):
+                partes = valor_limpo.rsplit(',', 1)
+                parte_inteira = partes[0].replace('.', '')
+                parte_decimal = partes[1] if len(partes) > 1 else '0'
+                valor_final = parte_inteira + '.' + parte_decimal
+            else:
+                partes = valor_limpo.rsplit('.', 1)
+                parte_inteira = partes[0].replace(',', '')
+                parte_decimal = partes[1] if len(partes) > 1 else '0'
+                valor_final = parte_inteira + '.' + parte_decimal
+        elif ',' in valor_limpo:
+            valor_final = valor_limpo.replace(',', '.')
+        else:
+            valor_final = valor_limpo
+
+        resultado = float(valor_final)
+        return round(max(0, resultado), 2)
+
+    except Exception as e:
+        current_app.logger.warning(f"Erro ao processar valor '{valor_str}': {e}")
+        return 0.0
+
+
+def detectar_delimitador(sample_text):
+    """Detecta automaticamente o delimitador do CSV"""
+    delimitadores = [',', ';', '\t', '|']
+    counts = {}
+
+    for delim in delimitadores:
+        counts[delim] = sample_text.count(delim)
+
+    return max(counts, key=counts.get) if max(counts.values()) > 0 else ','
+
+
+def detectar_encoding(file_path):
+    """Detecta automaticamente o encoding do arquivo"""
+    encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+
+    for encoding in encodings:
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                f.read(1000)
+            return encoding
+        except UnicodeDecodeError:
+            continue
+
+    return 'utf-8'
+
+
+# ============================================================================
+# NOVAS ROTAS — Exclusão em massa, por fornecedor, todos e exportação CSV
+# ============================================================================
+
+@app.route("/produtos_fornecedores/excluir_selecionados", methods=["POST"])
+@login_required
+def excluir_produtos_selecionados():
+    try:
+        data = request.get_json(silent=True) or {}
+        ids = data.get("produto_ids") or []
+        if not isinstance(ids, list) or not ids:
+            return jsonify({"success": False, "error": "Nenhum produto selecionado."}), 400
+
+        # Apenas IDs que pertencem ao usuário
+        produtos = ProdutosFornecedores.query.filter(
+            ProdutosFornecedores.user_id == current_user.id,
+            ProdutosFornecedores.id.in_(ids)
+        ).all()
+        if not produtos:
+            return jsonify({"success": False, "error": "Produtos não encontrados."}), 404
+
+        # Buscar detalhes (para remover fotos do disco, se houver)
+        detalhes = ProdutoDetalhes.query.filter(ProdutoDetalhes.produto_id.in_([p.id for p in produtos])).all()
+        for d in detalhes:
+            if d.foto_url:
+                try:
+                    fp = d.foto_url.lstrip("/")
+                    if fp.startswith("static/"):
+                        abs_path = os.path.join(current_app.root_path, fp)
+                        if os.path.exists(abs_path):
+                            os.remove(abs_path)
+                except Exception as e:
+                    current_app.logger.warning(f"Falha ao remover foto '{d.foto_url}': {e}")
+
+        # Delete detalhes e produtos
+        ProdutoDetalhes.query.filter(ProdutoDetalhes.produto_id.in_([p.id for p in produtos])) \
+            .delete(synchronize_session=False)
+        ProdutosFornecedores.query.filter(ProdutosFornecedores.id.in_([p.id for p in produtos])) \
+            .delete(synchronize_session=False)
+
+        db.session.commit()
+        return jsonify(
+            {"success": True, "deleted": len(produtos), "message": f"{len(produtos)} produto(s) excluído(s)."})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao excluir selecionados: {e}")
+        return jsonify({"success": False, "error": "Erro interno ao excluir selecionados."}), 500
+
+
+@app.route("/produtos_fornecedores/excluir_por_fornecedor", methods=["POST"])
+@login_required
+def excluir_produtos_por_fornecedor():
+    try:
+        data = request.get_json(silent=True) or {}
+        fornecedor_id = data.get("fornecedor_id")
+        if not fornecedor_id:
+            return jsonify({"success": False, "error": "Fornecedor não informado."}), 400
+
+        # Confere se fornecedor é do usuário
+        fornecedor = FornecedorProdutos.query.filter_by(id=fornecedor_id, user_id=current_user.id).first()
+        if not fornecedor:
+            return jsonify({"success": False, "error": "Fornecedor não encontrado."}), 404
+
+        produtos = ProdutosFornecedores.query.filter_by(
+            user_id=current_user.id, fornecedor_id=fornecedor_id
+        ).all()
+
+        if not produtos:
+            return jsonify({"success": False, "error": "Não há produtos para esse fornecedor."}), 404
+
+        # Remover fotos (se houver) e detalhes
+        ids = [p.id for p in produtos]
+        detalhes = ProdutoDetalhes.query.filter(ProdutoDetalhes.produto_id.in_(ids)).all()
+        for d in detalhes:
+            if d.foto_url:
+                try:
+                    fp = d.foto_url.lstrip("/")
+                    if fp.startswith("static/"):
+                        abs_path = os.path.join(current_app.root_path, fp)
+                        if os.path.exists(abs_path):
+                            os.remove(abs_path)
+                except Exception as e:
+                    current_app.logger.warning(f"Falha ao remover foto '{d.foto_url}': {e}")
+
+        ProdutoDetalhes.query.filter(ProdutoDetalhes.produto_id.in_(ids)).delete(synchronize_session=False)
+        ProdutosFornecedores.query.filter(ProdutosFornecedores.id.in_(ids)).delete(synchronize_session=False)
+        db.session.commit()
+
+        return jsonify(
+            {"success": True, "deleted": len(ids), "message": f"{len(ids)} produto(s) do fornecedor excluído(s)."})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao excluir por fornecedor: {e}")
+        return jsonify({"success": False, "error": "Erro interno ao excluir por fornecedor."}), 500
+
+
+@app.route("/produtos_fornecedores/excluir_todos", methods=["POST"])
+@login_required
+def excluir_produtos_todos():
+    try:
+        # Busca todos os produtos do usuário
+        produtos = ProdutosFornecedores.query.filter_by(user_id=current_user.id).all()
+        if not produtos:
+            return jsonify({"success": False, "error": "Você não possui produtos cadastrados."}), 404
+
+        ids = [p.id for p in produtos]
+
+        # Remover fotos (se houver) e detalhes
+        detalhes = ProdutoDetalhes.query.filter(ProdutoDetalhes.produto_id.in_(ids)).all()
+        for d in detalhes:
+            if d.foto_url:
+                try:
+                    fp = d.foto_url.lstrip("/")
+                    if fp.startswith("static/"):
+                        abs_path = os.path.join(current_app.root_path, fp)
+                        if os.path.exists(abs_path):
+                            os.remove(abs_path)
+                except Exception as e:
+                    current_app.logger.warning(f"Falha ao remover foto '{d.foto_url}': {e}")
+
+        ProdutoDetalhes.query.filter(ProdutoDetalhes.produto_id.in_(ids)).delete(synchronize_session=False)
+        ProdutosFornecedores.query.filter(ProdutosFornecedores.id.in_(ids)).delete(synchronize_session=False)
+
+        db.session.commit()
+        return jsonify(
+            {"success": True, "deleted": len(ids), "message": f"Todos os {len(ids)} produto(s) foram excluídos."})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao excluir todos: {e}")
+        return jsonify({"success": False, "error": "Erro interno ao excluir todos."}), 500
+
+
+@app.route("/produtos_fornecedores/baixar_planilha", methods=["GET"])
+@login_required
+def baixar_planilha_produtos():
+    """
+    Exporta CSV dos produtos cadastrados (com fornecedor e flags de foto/descrição).
+    Mantém BOM para Excel.
+    """
+    try:
+        # Carrega produtos do usuário
+        produtos = ProdutosFornecedores.query.filter_by(user_id=current_user.id) \
+            .order_by(ProdutosFornecedores.nome).all()
+
+        # Fornecedores (lookup)
+        fornecedores = FornecedorProdutos.query.filter_by(user_id=current_user.id).all()
+        fornecedores_dict = {f.id: f.nome_empresa for f in fornecedores}
+
+        # Monta CSV em memória
+        output = io.StringIO()
+        fieldnames = [
+            "id", "nome", "marca", "modelo", "unidade_medida", "custo",
+            "fornecedor_id", "fornecedor_nome", "tem_foto", "tem_descricao"
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=";")
+        writer.writeheader()
+
+        for p in produtos:
+            det = ProdutoDetalhes.query.filter_by(produto_id=p.id).first()
+            writer.writerow({
+                "id": p.id,
+                "nome": p.nome or "",
+                "marca": p.marca or "",
+                "modelo": p.modelo or "",
+                "unidade_medida": p.unidade_medida or "UN",
+                "custo": f"{float(p.custo or 0):.2f}",
+                "fornecedor_id": p.fornecedor_id or "",
+                "fornecedor_nome": fornecedores_dict.get(p.fornecedor_id, "") if p.fornecedor_id else "",
+                "tem_foto": "1" if (det and det.foto_url) else "0",
+                "tem_descricao": "1" if (det and det.descricao_detalhada) else "0",
+            })
+
+        mem = io.BytesIO()
+        mem.write(output.getvalue().encode("utf-8-sig"))  # BOM
+        mem.seek(0)
+
+        return send_file(
+            mem,
+            as_attachment=True,
+            download_name=f"produtos_cadastrados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mimetype="text/csv"
+        )
+    except Exception as e:
+        current_app.logger.error(f"Erro ao exportar CSV de produtos: {e}")
+        flash("Erro ao exportar CSV de produtos.", "danger")
+        return redirect(url_for("listar_produtos_fornecedores"))
+
+
+from flask import request, jsonify, current_app
+from flask_login import login_required, current_user
+from models import db, FornecedorProdutos, ProdutosFornecedores
+
+
+# ============================================================================
+# ROTA PARA LISTAR FORNECEDORES (JSON)
+# ============================================================================
+
+@app.route("/fornecedor_produtos/listar", methods=["GET"])
+@login_required
+def listar_fornecedores_json():
+    """
+    ROTA AJAX: Listar fornecedores do usuário em formato JSON
+    """
+    try:
+        current_app.logger.info(f"Listando fornecedores para usuário {current_user.id}")
+
+        # Buscar fornecedores com contagem de produtos
+        fornecedores_query = db.session.query(
+            FornecedorProdutos,
+            func.count(ProdutosFornecedores.id).label('total_produtos')
+        ).outerjoin(
+            ProdutosFornecedores,
+            and_(
+                FornecedorProdutos.id == ProdutosFornecedores.fornecedor_id,
+                ProdutosFornecedores.user_id == current_user.id
+            )
+        ).filter(
+            FornecedorProdutos.user_id == current_user.id
+        ).group_by(FornecedorProdutos.id).order_by(FornecedorProdutos.nome_empresa)
+
+        fornecedores_data = []
+        for fornecedor, total_produtos in fornecedores_query:
+            fornecedor_dict = {
+                'id': fornecedor.id,
+                'cnpj': fornecedor.cnpj,
+                'nome_empresa': fornecedor.nome_empresa,
+                'endereco': fornecedor.endereco,
+                'atividade_principal': fornecedor.atividade_principal,
+                'contato': fornecedor.contato,
+                'nome_vendedor': fornecedor.nome_vendedor,
+                'contato_vendedor': fornecedor.contato_vendedor,
+                'comentario': fornecedor.comentario,
+                'total_produtos': total_produtos
+            }
+            fornecedores_data.append(fornecedor_dict)
+
+        current_app.logger.info(f"Retornados {len(fornecedores_data)} fornecedores")
+
+        return jsonify({
+            'success': True,
+            'fornecedores': fornecedores_data
+        })
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao listar fornecedores: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ============================================================================
+# ROTA PARA EXCLUIR FORNECEDOR (PERMITINDO EXCLUIR FORNECEDOR VINCULADO)
+# ============================================================================
+@app.route("/fornecedor_produtos/excluir/<int:fornecedor_id>", methods=["POST"])
+@login_required
+def excluir_fornecedor_produto(fornecedor_id):
+    """
+    ROTA AJAX: Exclui um fornecedor. Antes, desvincula todos os produtos associados a ele.
+    """
+    try:
+        # 1. Busca o fornecedor para garantir que ele pertence ao usuário logado
+        fornecedor = FornecedorProdutos.query.filter_by(id=fornecedor_id, user_id=current_user.id).first()
+
+        if fornecedor:
+            # 2. (NOVO) Encontra todos os produtos vinculados e os desvincula (define fornecedor_id como None)
+            # Esta é a forma mais eficiente de fazer isso, com um único comando ao banco de dados.
+            ProdutosFornecedores.query.filter_by(
+                fornecedor_id=fornecedor.id,
+                user_id=current_user.id
+            ).update({"fornecedor_id": None})
+
+            # 3. Agora que os produtos estão desvinculados, exclui o fornecedor com segurança
+            db.session.delete(fornecedor)
+
+            # 4. Salva todas as alterações (a desvinculação e a exclusão)
+            db.session.commit()
+
+            current_app.logger.info(
+                f"Fornecedor {fornecedor_id} excluído e seus produtos desvinculados pelo usuário {current_user.id}")
+            return jsonify({'success': True,
+                            'message': 'Fornecedor excluído com sucesso! Os produtos foram mantidos sem fornecedor.'})
+        else:
+            return jsonify({'success': False, 'error': 'Fornecedor não encontrado ou não autorizado.'}), 404
+
+    except Exception as e:
+        db.session.rollback()  # Desfaz as alterações em caso de erro
+        current_app.logger.error(f"Erro ao excluir fornecedor {fornecedor_id}: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor ao tentar excluir o fornecedor.'}), 500
+
+
+@app.route("/produtos_fornecedores/cadastrar_produto", methods=["POST"])
+@login_required
+def cadastrar_produto_fornecedor():
+    """Cadastra um novo produto"""
+    try:
+        nome = request.form.get("nome", "").strip()
+        custo_str = request.form.get("custo", "").strip()
+        fornecedor_id = request.form.get("fornecedor_id")
+
+        if not nome or not custo_str:
+            flash("Nome e Custo são obrigatórios!", "danger")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        custo = processar_valor_monetario(custo_str)
+        if custo <= 0:
+            flash("Custo deve ser um valor positivo.", "danger")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        novo_produto = ProdutosFornecedores(
+            nome=nome,
+            marca=request.form.get("marca"),
+            modelo=request.form.get("modelo"),
+            unidade_medida=request.form.get("unidade_medida", "UN"),
+            custo=custo,
+            user_id=current_user.id,
+            fornecedor_id=int(fornecedor_id) if fornecedor_id else None
+        )
+        db.session.add(novo_produto)
+        db.session.commit()
+        flash("Produto cadastrado com sucesso!", "success")
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Erro ao cadastrar produto: {str(e)}", "danger")
+
+    return redirect(url_for("listar_produtos_fornecedores"))
+
+
+@app.route("/produtos_fornecedores/upload_csv", methods=["POST"])
+@login_required
+def upload_csv_produtos():
+    """Processa o upload de um arquivo CSV de produtos"""
+    if 'csv_file' not in request.files:
+        flash('Nenhum arquivo CSV enviado.', 'danger')
+        return redirect(url_for('listar_produtos_fornecedores'))
+
+    file = request.files['csv_file']
+    if file.filename == '':
+        flash('Nome do arquivo vazio.', 'danger')
+        return redirect(url_for('listar_produtos_fornecedores'))
+
+    if file:
+        try:
+            # Salvar temporariamente
+            temp_dir = tempfile.mkdtemp()
+            temp_path = os.path.join(temp_dir, secure_filename(file.filename))
+            file.save(temp_path)
+
+            # Detectar encoding e delimitador
+            encoding = detectar_encoding(temp_path)
+            with open(temp_path, 'r', encoding=encoding) as f:
+                sample_text = f.read(2048)
+                delimiter = detectar_delimitador(sample_text)
+
+            # Processar CSV
+            with open(temp_path, mode='r', encoding=encoding) as csv_file:
+                csv_reader = csv.DictReader(csv_file, delimiter=delimiter)
+
+                # Mapeamento de colunas (flexível)
+                header = [h.lower().strip() for h in csv_reader.fieldnames]
+                column_map = {
+                    'nome': [c for c in ['nome', 'produto', 'descrição'] if c in header],
+                    'marca': [c for c in ['marca'] if c in header],
+                    'modelo': [c for c in ['modelo'] if c in header],
+                    'unidade': [c for c in ['unidade', 'unidade_medida', 'un'] if c in header],
+                    'custo': [c for c in ['custo', 'preço', 'valor'] if c in header],
+                    'fornecedor_nome': [c for c in ['fornecedor', 'nome_fornecedor'] if c in header],
+                    'fornecedor_cnpj': [c for c in ['cnpj', 'fornecedor_cnpj'] if c in header]
+                }
+
+                produtos_adicionados = 0
+                for row in csv_reader:
+                    try:
+                        # Extrair dados com base no mapeamento
+                        nome = next((row[c] for c in column_map['nome'] if row.get(c)), None)
+                        custo_str = next((row[c] for c in column_map['custo'] if row.get(c)), None)
+
+                        if not nome or not custo_str:
+                            continue
+
+                        custo = processar_valor_monetario(custo_str)
+                        if custo <= 0:
+                            continue
+
+                        # Fornecedor (opcional)
+                        fornecedor_id = None
+                        fornecedor_cnpj = next((row[c] for c in column_map['fornecedor_cnpj'] if row.get(c)), None)
+                        fornecedor_nome = next((row[c] for c in column_map['fornecedor_nome'] if row.get(c)), None)
+
+                        if fornecedor_cnpj:
+                            fornecedor = FornecedorProdutos.query.filter_by(cnpj=fornecedor_cnpj.strip(),
+                                                                            user_id=current_user.id).first()
+                            if fornecedor:
+                                fornecedor_id = fornecedor.id
+                        elif fornecedor_nome:
+                            fornecedor = FornecedorProdutos.query.filter_by(nome_empresa=fornecedor_nome.strip(),
+                                                                            user_id=current_user.id).first()
+                            if fornecedor:
+                                fornecedor_id = fornecedor.id
+
+                        # Criar produto
+                        novo_produto = ProdutosFornecedores(
+                            nome=nome.strip(),
+                            marca=next((row[c] for c in column_map['marca'] if row.get(c)), None),
+                            modelo=next((row[c] for c in column_map['modelo'] if row.get(c)), None),
+                            unidade_medida=next((row[c] for c in column_map['unidade'] if row.get(c)), 'UN'),
+                            custo=custo,
+                            user_id=current_user.id,
+                            fornecedor_id=fornecedor_id
+                        )
+                        db.session.add(novo_produto)
+                        produtos_adicionados += 1
+
+                    except Exception as inner_e:
+                        current_app.logger.warning(f"Erro ao processar linha do CSV: {inner_e}")
+                        continue
+
+                db.session.commit()
+                flash(f'{produtos_adicionados} produtos adicionados com sucesso via CSV!', 'success')
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Erro ao processar o arquivo CSV: {str(e)}', 'danger')
+            current_app.logger.error(f"Erro no upload de CSV: {e}")
+
+        finally:
+            # Limpar pasta temporária
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                import shutil
+                shutil.rmtree(temp_dir)
+
+    return redirect(url_for('listar_produtos_fornecedores'))
+
+
+# ============================================================================
+# ROTAS CORRIGIDAS COM NOVA VALIDAÇÃO
+# ============================================================================
+
+@app.route("/fornecedor_produtos/cadastrar", methods=["POST"])
+@login_required
+def cadastrar_fornecedor_produto_corrigido():
+    """
+    ROTA CORRIGIDA: Valida CNPJ apenas para o usuário atual
+    """
+    try:
+        current_app.logger.info(f"Cadastrando fornecedor para usuário {current_user.id}")
+
+        # Obter dados do formulário
+        cnpj = request.form.get("cnpj", "").strip()
+        nome_empresa = request.form.get("nome_empresa", "").strip()
+        endereco = request.form.get("endereco", "").strip()
+        atividade_principal = request.form.get("atividade_principal", "").strip()
+        contato = request.form.get("contato", "").strip()
+        nome_vendedor = request.form.get("nome_vendedor", "").strip()
+        contato_vendedor = request.form.get("contato_vendedor", "").strip()
+        comentario = request.form.get("comentario", "").strip()
+
+        # Validações
+        if not cnpj:
+            flash("CNPJ é obrigatório!", "danger")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        if not nome_empresa:
+            flash("Nome da empresa é obrigatório!", "danger")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        # CORREÇÃO: Verificar se CNPJ já existe APENAS para este usuário
+        if not validar_cnpj_unico_por_usuario(cnpj, current_user.id):
+            flash("CNPJ já cadastrado por você!", "warning")
+            return redirect(url_for("listar_produtos_fornecedores"))
+
+        # Criar novo fornecedor
+        novo_fornecedor = FornecedorProdutos(
+            cnpj=cnpj,
+            nome_empresa=nome_empresa,
+            endereco=endereco if endereco else None,
+            atividade_principal=atividade_principal if atividade_principal else None,
+            contato=contato if contato else None,
+            nome_vendedor=nome_vendedor if nome_vendedor else None,
+            contato_vendedor=contato_vendedor if contato_vendedor else None,
+            comentario=comentario if comentario else None,
+            user_id=current_user.id
+        )
+
+        db.session.add(novo_fornecedor)
+        db.session.commit()
+
+        current_app.logger.info(f"Fornecedor '{nome_empresa}' cadastrado com sucesso para usuário {current_user.id}")
+        flash(f"Fornecedor '{nome_empresa}' cadastrado com sucesso!", "success")
+
+        return redirect(url_for("listar_produtos_fornecedores"))
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao cadastrar fornecedor: {e}")
+        flash("Erro ao cadastrar fornecedor. Tente novamente.", "danger")
+        return redirect(url_for("listar_produtos_fornecedores"))
+
+
+def validar_cnpj_unico_por_usuario(cnpj, user_id, fornecedor_id=None):
+    """
+    Valida se o CNPJ já existe para o usuário específico
+
+    Args:
+        cnpj: CNPJ a ser validado
+        user_id: ID do usuário
+        fornecedor_id: ID do fornecedor (para edição, opcional)
+
+    Returns:
+        bool: True se CNPJ é válido (não existe para o usuário)
+    """
+    query = FornecedorProdutos.query.filter_by(cnpj=cnpj, user_id=user_id)
+
+    # Se estiver editando, excluir o próprio fornecedor da validação
+    if fornecedor_id:
+        query = query.filter(FornecedorProdutos.id != fornecedor_id)
+
+    return query.first() is None
+
+
+# ============================================================================
+# ROTA PRINCIPAL COM PAGINAÇÃO
+# ============================================================================
+
+@app.route("/produtos_fornecedores", methods=["GET"])
+@login_required
+def listar_produtos_fornecedores():
+    """
+    ROTA PRINCIPAL: Lista produtos com paginação e filtros
+    """
+    try:
+        current_app.logger.info(f"Carregando produtos com paginação para usuário {current_user.id}")
+
+        # Parâmetros de paginação
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        per_page = min(per_page, 100)  # Máximo 100 itens por página
+
+        # Parâmetros de filtro
+        fornecedor_id = request.args.get('fornecedor_id', type=int)
+        busca = request.args.get('busca', '').strip()
+        status = request.args.get('status', '').strip()
+
+        # Query base
+        query = ProdutosFornecedores.query.filter_by(user_id=current_user.id)
+
+        # Aplicar filtros
+        if fornecedor_id:
+            query = query.filter(ProdutosFornecedores.fornecedor_id == fornecedor_id)
+
+        if busca:
+            busca_pattern = f"%{busca}%"
+            query = query.filter(
+                or_(
+                    ProdutosFornecedores.nome.ilike(busca_pattern),
+                    ProdutosFornecedores.marca.ilike(busca_pattern),
+                    ProdutosFornecedores.modelo.ilike(busca_pattern)
+                )
+            )
+
+        # Filtros de status (implementação simplificada)
+        if status == 'com-foto':
+            # Subquery para produtos com foto
+            produtos_com_foto = db.session.query(ProdutoDetalhes.produto_id).filter(
+                ProdutoDetalhes.foto_url.isnot(None),
+                ProdutoDetalhes.foto_url != ''
+            ).subquery()
+            query = query.filter(ProdutosFornecedores.id.in_(produtos_com_foto))
+
+        elif status == 'sem-foto':
+            # Produtos sem foto
+            produtos_com_foto = db.session.query(ProdutoDetalhes.produto_id).filter(
+                ProdutoDetalhes.foto_url.isnot(None),
+                ProdutoDetalhes.foto_url != ''
+            ).subquery()
+            query = query.filter(~ProdutosFornecedores.id.in_(produtos_com_foto))
+
+        elif status == 'com-descricao':
+            # Produtos com descrição
+            produtos_com_descricao = db.session.query(ProdutoDetalhes.produto_id).filter(
+                ProdutoDetalhes.descricao_detalhada.isnot(None),
+                ProdutoDetalhes.descricao_detalhada != ''
+            ).subquery()
+            query = query.filter(ProdutosFornecedores.id.in_(produtos_com_descricao))
+
+        elif status == 'sem-descricao':
+            # Produtos sem descrição
+            produtos_com_descricao = db.session.query(ProdutoDetalhes.produto_id).filter(
+                ProdutoDetalhes.descricao_detalhada.isnot(None),
+                ProdutoDetalhes.descricao_detalhada != ''
+            ).subquery()
+            query = query.filter(~ProdutosFornecedores.id.in_(produtos_com_descricao))
+
+        # Ordenação
+        query = query.order_by(ProdutosFornecedores.nome)
+
+        # Paginação
+        pagination = query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+
+        # Buscar fornecedores para filtros
+        fornecedores = FornecedorProdutos.query.filter_by(
+            user_id=current_user.id
+        ).order_by(FornecedorProdutos.nome_empresa).all()
+
+        # Criar dicionário de fornecedores para lookup
+        fornecedores_dict = {f.id: f.nome_empresa for f in fornecedores}
+
+        # Preparar dados dos produtos
+        produtos_formatados = []
+        for produto in pagination.items:
+            try:
+                # Buscar detalhes do produto
+                detalhes = ProdutoDetalhes.query.filter_by(produto_id=produto.id).first()
+
+                produto_dict = {
+                    "id": produto.id,
+                    "nome": produto.nome or "Nome não informado",
+                    "marca": produto.marca or "",
+                    "modelo": produto.modelo or "",
+                    "unidade_medida": produto.unidade_medida or "UN",
+                    "custo": float(produto.custo) if produto.custo else 0.0,
+                    "fornecedor_id": produto.fornecedor_id,
+                    "fornecedor_nome": fornecedores_dict.get(produto.fornecedor_id, "Sem fornecedor"),
+                    "tem_foto": bool(detalhes and detalhes.foto_url),
+                    "tem_descricao": bool(detalhes and detalhes.descricao_detalhada),
+                    "foto_url": detalhes.foto_url if detalhes else None,
+                    "descricao_preview": (
+                        detalhes.descricao_detalhada[:100] + "..."
+                        if detalhes and detalhes.descricao_detalhada and len(detalhes.descricao_detalhada) > 100
+                        else (detalhes.descricao_detalhada if detalhes else "")
+                    )
+                }
+                produtos_formatados.append(produto_dict)
+
+            except Exception as e:
+                current_app.logger.warning(f"Erro ao processar produto {produto.id}: {e}")
+                continue
+
+        # Informações de paginação
+        paginacao_info = {
+            'page': pagination.page,
+            'pages': pagination.pages,
+            'per_page': pagination.per_page,
+            'total': pagination.total,
+            'has_prev': pagination.has_prev,
+            'has_next': pagination.has_next,
+            'prev_num': pagination.prev_num,
+            'next_num': pagination.next_num,
+            'showing_start': (pagination.page - 1) * pagination.per_page + 1 if pagination.total > 0 else 0,
+            'showing_end': min(pagination.page * pagination.per_page, pagination.total)
+        }
+
+        # Informações de filtros aplicados
+        filtros_info = {
+            'fornecedor_id': fornecedor_id,
+            'busca': busca,
+            'status': status
+        }
+
+        current_app.logger.info(f"Carregados {len(produtos_formatados)} produtos (página {page}/{pagination.pages})")
+
+        return render_template(
+            "produtos_fornecedores_paginacao_completa.html",
+            produtos=produtos_formatados,
+            fornecedores=fornecedores,
+            paginacao=paginacao_info,
+            filtros=filtros_info
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Erro crítico ao listar produtos para usuário {current_user.id}: {e}")
+
+        # Em caso de erro, retornar página com dados vazios
+        return render_template(
+            "produtos_fornecedores_paginacao_completa.html",
+            produtos=[],
+            fornecedores=[],
+            paginacao={'page': 1, 'pages': 1, 'per_page': 20, 'total': 0, 'has_prev': False, 'has_next': False,
+                       'showing_start': 0, 'showing_end': 0},
+            filtros={'fornecedor_id': None, 'busca': '', 'status': ''}
+        )
+
+
+# ============================================================================
+# ROTA AJAX PARA FILTROS COM PAGINAÇÃO
+# ============================================================================
+
+@app.route("/produtos_fornecedores/filtrar_paginado", methods=["GET"])
+@login_required
+def filtrar_produtos_paginado():
+    """
+    ROTA AJAX: Filtrar produtos com paginação (retorna JSON)
+    """
+    try:
+        current_app.logger.info(f"Filtrando produtos com paginação para usuário {current_user.id}")
+
+        # Parâmetros de paginação
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        per_page = min(per_page, 100)  # Máximo 100 itens por página
+
+        # Parâmetros de filtro
+        fornecedor_id = request.args.get('fornecedor_id', type=int)
+        busca = request.args.get('busca', '').strip()
+        status = request.args.get('status', '').strip()
+
+        # Query base
+        query = ProdutosFornecedores.query.filter_by(user_id=current_user.id)
+
+        # Aplicar filtros (mesmo código da rota principal)
+        if fornecedor_id:
+            query = query.filter(ProdutosFornecedores.fornecedor_id == fornecedor_id)
+
+        if busca:
+            busca_pattern = f"%{busca}%"
+            query = query.filter(
+                or_(
+                    ProdutosFornecedores.nome.ilike(busca_pattern),
+                    ProdutosFornecedores.marca.ilike(busca_pattern),
+                    ProdutosFornecedores.modelo.ilike(busca_pattern)
+                )
+            )
+
+        # Filtros de status
+        if status == 'com-foto':
+            produtos_com_foto = db.session.query(ProdutoDetalhes.produto_id).filter(
+                ProdutoDetalhes.foto_url.isnot(None),
+                ProdutoDetalhes.foto_url != ''
+            ).subquery()
+            query = query.filter(ProdutosFornecedores.id.in_(produtos_com_foto))
+
+        elif status == 'sem-foto':
+            produtos_com_foto = db.session.query(ProdutoDetalhes.produto_id).filter(
+                ProdutoDetalhes.foto_url.isnot(None),
+                ProdutoDetalhes.foto_url != ''
+            ).subquery()
+            query = query.filter(~ProdutosFornecedores.id.in_(produtos_com_foto))
+
+        elif status == 'com-descricao':
+            produtos_com_descricao = db.session.query(ProdutoDetalhes.produto_id).filter(
+                ProdutoDetalhes.descricao_detalhada.isnot(None),
+                ProdutoDetalhes.descricao_detalhada != ''
+            ).subquery()
+            query = query.filter(ProdutosFornecedores.id.in_(produtos_com_descricao))
+
+        elif status == 'sem-descricao':
+            produtos_com_descricao = db.session.query(ProdutoDetalhes.produto_id).filter(
+                ProdutoDetalhes.descricao_detalhada.isnot(None),
+                ProdutoDetalhes.descricao_detalhada != ''
+            ).subquery()
+            query = query.filter(~ProdutosFornecedores.id.in_(produtos_com_descricao))
+
+        # Ordenação
+        query = query.order_by(ProdutosFornecedores.nome)
+
+        # Paginação
+        pagination = query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+
+        # Buscar fornecedores para lookup
+        fornecedores = FornecedorProdutos.query.filter_by(
+            user_id=current_user.id
+        ).all()
+        fornecedores_dict = {f.id: f.nome_empresa for f in fornecedores}
+
+        # Preparar dados dos produtos
+        produtos_formatados = []
+        for produto in pagination.items:
+            try:
+                detalhes = ProdutoDetalhes.query.filter_by(produto_id=produto.id).first()
+
+                produto_dict = {
+                    "id": produto.id,
+                    "nome": produto.nome or "Nome não informado",
+                    "marca": produto.marca or "",
+                    "modelo": produto.modelo or "",
+                    "unidade_medida": produto.unidade_medida or "UN",
+                    "custo": float(produto.custo) if produto.custo else 0.0,
+                    "fornecedor_id": produto.fornecedor_id,
+                    "fornecedor_nome": fornecedores_dict.get(produto.fornecedor_id, "Sem fornecedor"),
+                    "tem_foto": bool(detalhes and detalhes.foto_url),
+                    "tem_descricao": bool(detalhes and detalhes.descricao_detalhada),
+                    "foto_url": detalhes.foto_url if detalhes else None
+                }
+                produtos_formatados.append(produto_dict)
+
+            except Exception as e:
+                current_app.logger.warning(f"Erro ao processar produto {produto.id}: {e}")
+                continue
+
+        # Informações de paginação
+        paginacao_info = {
+            'page': pagination.page,
+            'pages': pagination.pages,
+            'per_page': pagination.per_page,
+            'total': pagination.total,
+            'has_prev': pagination.has_prev,
+            'has_next': pagination.has_next,
+            'prev_num': pagination.prev_num,
+            'next_num': pagination.next_num,
+            'showing_start': (pagination.page - 1) * pagination.per_page + 1 if pagination.total > 0 else 0,
+            'showing_end': min(pagination.page * pagination.per_page, pagination.total)
+        }
+
+        current_app.logger.info(
+            f"Filtro retornou {len(produtos_formatados)} produtos (página {page}/{pagination.pages})")
+
+        return jsonify({
+            'success': True,
+            'produtos': produtos_formatados,
+            'paginacao': paginacao_info
+        })
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao filtrar produtos: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ============================================================================
+# ROTA PARA ESTATÍSTICAS
+# ============================================================================
+
+@app.route("/produtos_fornecedores/estatisticas", methods=["GET"])
+@login_required
+def obter_estatisticas_produtos():
+    """
+    ROTA AJAX: Obter estatísticas dos produtos do usuário
+    """
+    try:
+        current_app.logger.info(f"Carregando estatísticas para usuário {current_user.id}")
+
+        # Total de produtos
+        total_produtos = ProdutosFornecedores.query.filter_by(user_id=current_user.id).count()
+
+        # Produtos com foto
+        produtos_com_foto = db.session.query(func.count(ProdutosFornecedores.id)).join(
+            ProdutoDetalhes, ProdutosFornecedores.id == ProdutoDetalhes.produto_id
+        ).filter(
+            ProdutosFornecedores.user_id == current_user.id,
+            ProdutoDetalhes.foto_url.isnot(None),
+            ProdutoDetalhes.foto_url != ''
+        ).scalar() or 0
+
+        # Produtos com descrição
+        produtos_com_descricao = db.session.query(func.count(ProdutosFornecedores.id)).join(
+            ProdutoDetalhes, ProdutosFornecedores.id == ProdutoDetalhes.produto_id
+        ).filter(
+            ProdutosFornecedores.user_id == current_user.id,
+            ProdutoDetalhes.descricao_detalhada.isnot(None),
+            ProdutoDetalhes.descricao_detalhada != ''
+        ).scalar() or 0
+
+        # Total de fornecedores
+        total_fornecedores = FornecedorProdutos.query.filter_by(user_id=current_user.id).count()
+
+        estatisticas = {
+            'total_produtos': total_produtos,
+            'produtos_com_foto': produtos_com_foto,
+            'produtos_com_descricao': produtos_com_descricao,
+            'produtos_sem_foto': total_produtos - produtos_com_foto,
+            'produtos_sem_descricao': total_produtos - produtos_com_descricao,
+            'total_fornecedores': total_fornecedores
+        }
+
+        current_app.logger.info(f"Estatísticas carregadas: {estatisticas}")
+
+        return jsonify({
+            'success': True,
+            'estatisticas': estatisticas
+        })
+
+    except Exception as e:
+        current_app.logger.error(f"Erro ao carregar estatísticas: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ===== FUNÇÃO DE CONVERSÃO DE FORMATO DO EDITAL =====
+def converter_para_formato_antigo(resultado_json):
+    """
+    Converte o novo formato estruturado do JSON para o formato antigo
+    esperado pela calculadora de vendas.
+
+    Args:
+        resultado_json (dict): JSON no novo formato estruturado
+
+    Returns:
+        dict: JSON no formato antigo compatível com a calculadora
+    """
+    if not resultado_json or not isinstance(resultado_json, dict):
+        return {'informacoes_gerais': {}, 'itens': []}
+
+    # Extrai dados dos blocos estruturados
+    orgao = resultado_json.get('orgao_licitante', {})
+    dados_lic = resultado_json.get('dados_licitacao', {})
+    datas = resultado_json.get('datas_prazos', {})
+    valores = resultado_json.get('valores', {})
+    pagamento = resultado_json.get('condicoes_pagamento', {})
+
+    # Monta o formato antigo
+    formato_antigo = {
+        'informacoes_gerais': {
+            'razao_social': orgao.get('razao_social', ''),
+            'cnpj': orgao.get('cnpj', ''),
+            'endereco': orgao.get('endereco', ''),
+            'telefone': orgao.get('telefone', ''),
+            'email': orgao.get('email', ''),
+            'site': orgao.get('site', ''),
+
+            'numero_processo': dados_lic.get('numero_processo_edital', ''),
+            'modalidade': dados_lic.get('modalidade', ''),
+            'tipo': dados_lic.get('tipo', ''),
+            'regime_execucao': dados_lic.get('regime_execucao', ''),
+            'objeto': dados_lic.get('objeto', ''),
+            'justificativa': dados_lic.get('justificativa', ''),
+
+            'data_abertura': datas.get('data_abertura', ''),
+            'limite_impugnacao': datas.get('limite_impugnacao', ''),
+            'limite_esclarecimentos': datas.get('limite_esclarecimentos', ''),
+            'validade_proposta': datas.get('validade_proposta_dias', ''),
+            'prazo_entrega': datas.get('prazo_entrega_execucao', ''),
+            'vigencia_contrato': datas.get('vigencia_contrato', ''),
+
+            'valor_total': valores.get('valor_total_estimado', ''),
+            'dotacao_orcamentaria': valores.get('dotacao_orcamentaria', ''),
+
+            'prazo_pagamento': pagamento.get('forma_prazo_pagamento_reajuste_retencoes', ''),
+        },
+        'itens': resultado_json.get('itens', [])
+    }
+
+    return formato_antigo
+
+@app.route('/precificaja/leitor_edital', methods=['GET', 'POST'])
+@login_required
+def leitor_edital_route():
+    """
+    Rota para análise de editais com IA (nova versão: JSON estruturado)
+    """
+    resultado_analise = None  # HTML simples (compatibilidade)
+    resumo_ia = None          # JSON estruturado para o template novo
+
+    if request.method == 'POST':
+        if 'edital_pdf' not in request.files or not request.files['edital_pdf'].filename:
+            flash('Nenhum arquivo enviado', 'danger')
+            return redirect(request.url)
+
+        file = request.files['edital_pdf']
+
+        if file and '.' in file.filename and file.filename.rsplit('.', 1)[1].lower() == 'pdf':
+            filename = secure_filename(file.filename)
+            caminho_arquivo = os.path.join(app.config['EDITAL_UPLOAD_FOLDER'], filename)
+            file.save(caminho_arquivo)
+
+            try:
+                # Extrai texto do PDF
+                texto = leitor_edital.extrair_texto_de_pdf(caminho_arquivo)
+
+                if texto:
+                    # Chama a IA (nova versão: JSON direto)
+                    resultado_html, resultado_json = leitor_edital.analisar_edital_com_ia(texto)
+
+                    resultado_analise = resultado_html
+                    resumo_ia = resultado_json
+
+                    # Salva JSON na sessão para integração com calculadoras
+                    if resultado_json:
+                        session['edital_data'] = resultado_json
+                        print(f"✅ Dados do edital salvos na sessão: {len(resultado_json.get('itens', []))} itens")
+                else:
+                    flash('Não foi possível extrair texto do PDF.', 'danger')
+
+            except Exception as e:
+                flash(f'Ocorreu um erro no processamento: {e}', 'danger')
+                print(f"DEBUG: Erro completo na rota leitor_edital: {e}")
+
+            finally:
+                # Remove arquivo temporário se ainda existir
+                if os.path.exists(caminho_arquivo):
+                    os.remove(caminho_arquivo)
+        else:
+            flash('Arquivo inválido. Por favor, envie um PDF.', 'danger')
+
+    # IMPORTANTE: agora passamos também resumo_ia para o template
+    return render_template(
+        'leitor_edital.html',
+        resultado_analise=resultado_analise,
+        resumo_ia=resumo_ia
+    )
+
+
+from flask import session, jsonify
+import json
+
+@app.route('/precificaja/leitor_edital/analisar', methods=['POST'])
+def analisar_edital_route():
+    # ... (lógica para receber o arquivo PDF) ...
+    caminho_pdf = "..." # Caminho para o PDF salvo
+
+    texto_edital = extrair_texto_de_pdf(caminho_pdf)
+    html_result, json_result = analisar_edital_com_ia(texto_edital)
+
+    # Salva o JSON na sessão do usuário
+    session['edital_data'] = json_result
+
+    # Retorna o HTML para ser exibido na página de resultado
+    return html_result
+
+
+@app.route('/precificaja/api/get_edital_data', methods=['GET'])
+@login_required
+def get_edital_data():
+    """
+    API Endpoint para fornecer dados do edital para as calculadoras
+    Retorna o JSON salvo na sessão e o remove (entrega única)
+    """
+    # Pega e remove os dados da sessão
+    edital_data = session.pop('edital_data', None)
+
+    if edital_data:
+        print(f"📤 Enviando dados do edital para calculadora: {len(edital_data.get('itens', []))} itens")
+        return jsonify({
+            'success': True,
+            'data': edital_data
+        })
+    else:
+        print("⚠️  Nenhum dado de edital encontrado na sessão")
+        return jsonify({
+            'success': False,
+            'message': 'Nenhum dado de edital disponível'
+        }), 404
+# ----------------------
+# ================================
+# CADASTRO RÁPIDO DE PRODUTO (FINAL)
+# Usa: allowed_file(...), PRODUTOS_UPLOAD_FOLDER, processar_valor_monetario
+# ================================
+from datetime import datetime
+from werkzeug.utils import secure_filename
+import os
+
+
+@app.route("/produtos_fornecedores/cadastro_rapido", methods=["POST"])
+@login_required
+def cadastro_rapido_produto_fornecedor():
+    """
+    Cadastra rapidamente um produto:
+      - Cria ProdutosFornecedores
+      - Cria/atualiza ProdutoDetalhes (descricao_detalhada, foto_url)
+      - Salva imagem em static/uploads/produtos
+    Retorno: { success, message, produto, produto_id }
+    """
+    try:
+        current_app.logger.info(f"Cadastro rápido de produto para usuário {current_user.id}")
+
+        # 1) Dados podem vir via form-data (com 'foto') ou JSON
+        data = request.form if request.form else (request.get_json(silent=True) or {})
+
+        nome = (data.get("nome") or "").strip()
+        marca = (data.get("marca") or "").strip()
+        modelo = (data.get("modelo") or "").strip()
+        unidade_medida = (data.get("unidade_medida") or "UN").strip() or "UN"
+        custo_str = (data.get("custo") or "").strip()
+        fornecedor_id_s = (data.get("fornecedor_id") or "").strip()
+        descricao = (data.get("descricao") or "").strip()  # será gravada em descricao_detalhada
+
+        if not nome or not custo_str:
+            return jsonify({"success": False, "error": "Nome e custo são obrigatórios."}), 400
+
+        # 2) Converter custo com seu helper
+        custo = processar_valor_monetario(custo_str)
+        if custo <= 0:
+            return jsonify({"success": False, "error": "Custo deve ser um valor positivo."}), 400
+
+        # 3) Validar fornecedor do próprio usuário (se informado)
+        fornecedor_id = None
+        fornecedor = None
+        if fornecedor_id_s:
+            try:
+                f_id = int(fornecedor_id_s)
+                fornecedor = FornecedorProdutos.query.filter_by(id=f_id, user_id=current_user.id).first()
+                if not fornecedor:
+                    return jsonify({"success": False, "error": "Fornecedor não encontrado para este usuário."}), 404
+                fornecedor_id = f_id
+            except (ValueError, TypeError):
+                return jsonify({"success": False, "error": "ID de fornecedor inválido."}), 400
+
+        # 4) Criar produto base
+        novo_produto = ProdutosFornecedores(
+            nome=nome,
+            marca=marca or None,
+            modelo=modelo or None,
+            unidade_medida=unidade_medida or "UN",
+            custo=custo,
+            user_id=current_user.id,
+            fornecedor_id=fornecedor_id
+        )
+        db.session.add(novo_produto)
+        db.session.flush()  # pegar ID antes do commit
+
+        # 5) Foto (opcional) — usa seu allowed_file(...) e a pasta PRODUTOS_UPLOAD_FOLDER
+        foto_url = None
+        if "foto" in request.files:
+            foto = request.files["foto"]
+            if foto and foto.filename:
+                if not allowed_file(foto.filename):  # <-- seu helper existente
+                    db.session.rollback()
+                    return jsonify({"success": False, "error": "Arquivo não permitido pelo ALLOWED_EXTENSIONS."}), 400
+
+                base_nome = os.path.splitext(secure_filename(foto.filename))[0] or "produto"
+                ext = foto.filename.rsplit('.', 1)[1].lower()
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"{base_nome}_{ts}_{current_user.id}.{ext}"
+
+                os.makedirs(PRODUTOS_UPLOAD_FOLDER, exist_ok=True)
+                filepath = os.path.join(PRODUTOS_UPLOAD_FOLDER, filename)
+                foto.save(filepath)
+
+                # URL relativa para não perder cookies de sessão
+                foto_url = url_for("static", filename=f"uploads/produtos/{filename}")
+                current_app.logger.info(f"Foto salva: {filepath} -> {foto_url}")
+
+        # 6) Detalhes do produto (usa descricao_detalhada, não 'descricao')
+        detalhes = ProdutoDetalhes.query.filter_by(produto_id=novo_produto.id).first()
+        if not detalhes:
+            detalhes = ProdutoDetalhes(produto_id=novo_produto.id)
+            db.session.add(detalhes)
+
+        if descricao:
+            detalhes.descricao_detalhada = descricao
+        if foto_url:
+            detalhes.foto_url = foto_url
+
+        db.session.commit()
+
+        # 7) Monta payload compatível com o front (data.produto.id)
+        payload_produto = {
+            "id": novo_produto.id,
+            "nome": novo_produto.nome,
+            "marca": novo_produto.marca,
+            "modelo": novo_produto.modelo,
+            "unidade_medida": novo_produto.unidade_medida,
+            "custo": float(novo_produto.custo or 0.0),
+            "fornecedor_id": fornecedor_id,
+            "fornecedor_nome": (fornecedor.nome_empresa if fornecedor else None),
+            "foto_url": foto_url,
+            "descricao_detalhada": detalhes.descricao_detalhada if descricao else None
+        }
+
+        return jsonify({
+            "success": True,
+            "message": "Produto cadastrado com sucesso!",
+            "produto": payload_produto,  # <- compat com data.produto.id
+            "produto_id": novo_produto.id  # <- retrocompatível
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao cadastrar produto rapidamente: {e}")
+        return jsonify({"success": False, "error": f"Erro ao cadastrar produto rapidamente: {str(e)}"}), 500
+
+
+# ============================================================================
+# ROTA AUXILIAR: Listar fornecedores em JSON
+# ============================================================================
+@app.route("/fornecedor_produtos/listar_json", methods=["GET"])
+@login_required
+def listar_fornecedores_para_cadastro_rapido():
+    """
+    ROTA AJAX: Listar fornecedores para o cadastro rápido de produtos
+    """
+    try:
+        fornecedores = FornecedorProdutos.query.filter_by(
+            user_id=current_user.id
+        ).order_by(FornecedorProdutos.nome_empresa).all()
+
+        fornecedores_data = [{
+            'id': f.id,
+            'cnpj': f.cnpj,
+            'nome_empresa': f.nome_empresa
+        } for f in fornecedores]
+
+        return jsonify({
+            'success': True,
+            'fornecedores': fornecedores_data
+        })
+    except Exception as e:
+        current_app.logger.error(f"Erro ao listar fornecedores: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()  # Configurar o banco dentro do contexto
+    app.run(debug=True)

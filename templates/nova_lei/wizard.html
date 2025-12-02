@@ -1,0 +1,681 @@
+{% extends "base.html" %}
+
+{% block title %}Calculadora de Serviços - Nova Lei{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-0">
+                        <i class="fas fa-calculator me-2"></i>
+                        Calculadora de Serviços - Nova Lei
+                    </h2>
+                    <p class="text-muted mb-0">Planilha de custos e formação de preços para serviços de mão de obra</p>
+                </div>
+                <button class="btn btn-outline-primary" onclick="carregarCenarios()">
+                    <i class="fas fa-folder-open me-2"></i>
+                    Carregar Cenário
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Steps -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="step-item active" id="step-indicator-1">
+                            <div class="step-circle">1</div>
+                            <div class="step-label">Definição do Contrato</div>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step-item" id="step-indicator-2">
+                            <div class="step-circle">2</div>
+                            <div class="step-label">Encargos & Parâmetros</div>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step-item" id="step-indicator-3">
+                            <div class="step-circle">3</div>
+                            <div class="step-label">Simulação & Entregáveis</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wizard Content -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <!-- PASSO 1: Definição do Contrato -->
+                    <div id="passo-1" class="wizard-step active">
+                        <h4 class="mb-4">
+                            <i class="fas fa-file-contract me-2"></i>
+                            Passo 1: Definição do Contrato
+                        </h4>
+
+                        <!-- Tipo de Serviço -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">
+                                    Tipo de Serviço
+                                    <i class="fas fa-info-circle ms-1" data-bs-toggle="tooltip" 
+                                       title="Selecione o tipo de serviço ou escolha um preset"></i>
+                                </label>
+                                <select class="form-select" id="tipo-servico" onchange="aplicarPreset()">
+                                    <option value="">Selecione...</option>
+                                    <option value="Portaria">Portaria</option>
+                                    <option value="Limpeza">Limpeza</option>
+                                    <option value="Copeiragem">Copeiragem</option>
+                                    <option value="Zeladoria">Zeladoria</option>
+                                    <option value="Motorista">Motorista</option>
+                                    <option value="Camareiro">Camareiro</option>
+                                    <option value="Maqueiro">Maqueiro</option>
+                                    <option value="Outro">Outro</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Nome do Cenário</label>
+                                <input type="text" class="form-control" id="nome-cenario" 
+                                       placeholder="Ex: Proposta Limpeza Hospital XYZ">
+                            </div>
+                        </div>
+
+                        <!-- Postos de Trabalho -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-users me-2"></i>
+                                    Postos de Trabalho
+                                </h5>
+                                <button class="btn btn-primary btn-sm" onclick="adicionarPosto()">
+                                    <i class="fas fa-plus me-1"></i>
+                                    Adicionar Posto
+                                </button>
+                            </div>
+
+                            <div id="lista-postos">
+                                <!-- Postos serão adicionados aqui dinamicamente -->
+                            </div>
+                        </div>
+
+                        <!-- Insumos -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-box me-2"></i>
+                                    Insumos (Uniformes, EPIs, Materiais)
+                                    <i class="fas fa-info-circle ms-1" data-bs-toggle="tooltip" 
+                                       title="Insumos não possuem natureza salarial"></i>
+                                </h5>
+                                <button class="btn btn-primary btn-sm" onclick="adicionarInsumo()">
+                                    <i class="fas fa-plus me-1"></i>
+                                    Adicionar Insumo
+                                </button>
+                            </div>
+
+                            <div id="lista-insumos">
+                                <!-- Insumos serão adicionados aqui dinamicamente -->
+                            </div>
+                        </div>
+
+                        <!-- Botões de Navegação -->
+                        <div class="d-flex justify-content-end gap-2">
+                            <button class="btn btn-primary" onclick="proximoPasso(2)">
+                                Próximo
+                                <i class="fas fa-arrow-right ms-2"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- PASSO 2: Encargos & Parâmetros -->
+                    <div id="passo-2" class="wizard-step" style="display: none;">
+                        <h4 class="mb-4">
+                            <i class="fas fa-percentage me-2"></i>
+                            Passo 2: Encargos & Parâmetros
+                        </h4>
+
+                        <!-- Encargos Previdenciários -->
+                        <div class="mb-4">
+                            <h5 class="mb-3">Encargos Previdenciários/Terceiros</h5>
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <label class="form-label">INSS Patronal (%)</label>
+                                    <input type="number" class="form-control" id="inss-patronal" value="20.0" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Salário-Educação (%)</label>
+                                    <input type="number" class="form-control" id="salario-educacao" value="2.5" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">RAT/SAT (%)</label>
+                                    <input type="number" class="form-control" id="rat-sat" value="3.0" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">FAP (Multiplicador)</label>
+                                    <input type="number" class="form-control" id="fap" value="1.0" step="0.01">
+                                </div>
+                            </div>
+                            <div class="row g-3 mt-2">
+                                <div class="col-md-3">
+                                    <label class="form-label">SESC/SENAC (%)</label>
+                                    <input type="number" class="form-control" id="sesc-senac" value="1.5" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">SEBRAE (%)</label>
+                                    <input type="number" class="form-control" id="sebrae" value="0.6" step="0.1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">INCRA (%)</label>
+                                    <input type="number" class="form-control" id="incra" value="0.2" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Regime Tributário -->
+                        <div class="mb-4">
+                            <h5 class="mb-3">Regime Tributário</h5>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">Regime</label>
+                                    <select class="form-select" id="regime-tributario" onchange="atualizarCamposTributos()">
+                                        <option value="simples">Simples Nacional - Anexo IV</option>
+                                        <option value="presumido">Lucro Presumido</option>
+                                        <option value="real">Lucro Real</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2" id="campo-pis">
+                                    <label class="form-label">PIS (%)</label>
+                                    <input type="number" class="form-control" id="aliquota-pis" value="0.65" step="0.01">
+                                </div>
+                                <div class="col-md-2" id="campo-cofins">
+                                    <label class="form-label">COFINS (%)</label>
+                                    <input type="number" class="form-control" id="aliquota-cofins" value="3.0" step="0.01">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">ISS (%)</label>
+                                    <input type="number" class="form-control" id="aliquota-iss" value="5.0" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CITL -->
+                        <div class="mb-4">
+                            <h5 class="mb-3">CITL (Custos Indiretos, Tributos e Lucro)</h5>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Custos Indiretos (%)</label>
+                                    <input type="number" class="form-control" id="custos-indiretos" value="5.0" step="0.1">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Lucro (%)</label>
+                                    <input type="number" class="form-control" id="lucro-percentual" value="8.0" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Botões de Navegação -->
+                        <div class="d-flex justify-content-between">
+                            <button class="btn btn-outline-secondary" onclick="voltarPasso(1)">
+                                <i class="fas fa-arrow-left me-2"></i>
+                                Voltar
+                            </button>
+                            <button class="btn btn-primary" onclick="proximoPasso(3)">
+                                Próximo
+                                <i class="fas fa-arrow-right ms-2"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- PASSO 3: Simulação & Entregáveis -->
+                    <div id="passo-3" class="wizard-step" style="display: none;">
+                        <h4 class="mb-4">
+                            <i class="fas fa-chart-line me-2"></i>
+                            Passo 3: Simulação & Entregáveis
+                        </h4>
+
+                        <!-- Slider de Lucro -->
+                        <div class="mb-4">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h5 class="mb-3">Ajuste de Lucro Líquido</h5>
+                                    <div class="row align-items-center">
+                                        <div class="col-md-10">
+                                            <input type="range" class="form-range" id="slider-lucro" 
+                                                   min="0" max="20" step="0.5" value="8" 
+                                                   oninput="atualizarSimulacao()">
+                                        </div>
+                                        <div class="col-md-2 text-center">
+                                            <h3 class="mb-0" id="valor-lucro">8.0%</h3>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cards de Resumo -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="text-muted">Custo Total</h6>
+                                        <h4 class="mb-0" id="card-custo-total">R$ 0,00</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="text-muted">Preço Sugerido</h6>
+                                        <h4 class="mb-0" id="card-preco-sugerido">R$ 0,00</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="text-muted">Margem Líquida</h6>
+                                        <h4 class="mb-0" id="card-margem-liquida">0.0%</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="text-muted">Desconto Máximo</h6>
+                                        <h4 class="mb-0" id="card-desconto-maximo">0.0%</h4>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tabela de Resultados -->
+                        <div class="mb-4">
+                            <h5 class="mb-3">Resumo por Posto</h5>
+                            <div class="table-responsive">
+                                <table class="table table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Cargo</th>
+                                            <th>Qtd</th>
+                                            <th>Remuneração</th>
+                                            <th>Encargos</th>
+                                            <th>Insumos</th>
+                                            <th>Total/Posto</th>
+                                            <th>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tabela-resultados">
+                                        <!-- Resultados serão inseridos aqui -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Botões de Ação -->
+                        <div class="d-flex justify-content-between">
+                            <button class="btn btn-outline-secondary" onclick="voltarPasso(2)">
+                                <i class="fas fa-arrow-left me-2"></i>
+                                Voltar
+                            </button>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-success" onclick="salvarCenario()">
+                                    <i class="fas fa-save me-2"></i>
+                                    Salvar Cenário
+                                </button>
+                                <button class="btn btn-primary" onclick="gerarPDF()">
+                                    <i class="fas fa-file-pdf me-2"></i>
+                                    Gerar PDF
+                                </button>
+                                <button class="btn btn-info" onclick="exportarExcel()">
+                                    <i class="fas fa-file-excel me-2"></i>
+                                    Exportar Excel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Carregar Cenários -->
+<div class="modal fade" id="modalCenarios" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Carregar Cenário</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="lista-cenarios-modal">
+                    <!-- Cenários serão listados aqui -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .step-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+    }
+    
+    .step-circle {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background-color: #e9ecef;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 1.2rem;
+        color: #6c757d;
+        margin-bottom: 0.5rem;
+    }
+    
+    .step-item.active .step-circle {
+        background-color: #0059b8;
+        color: white;
+    }
+    
+    .step-label {
+        font-size: 0.9rem;
+        color: #6c757d;
+        text-align: center;
+    }
+    
+    .step-item.active .step-label {
+        color: #0059b8;
+        font-weight: 600;
+    }
+    
+    .step-line {
+        height: 2px;
+        background-color: #e9ecef;
+        flex: 1;
+        margin: 0 1rem;
+        margin-bottom: 2rem;
+    }
+    
+    .wizard-step {
+        min-height: 400px;
+    }
+</style>
+
+<script>
+    // Estado global do wizard
+    let estadoWizard = {
+        passoAtual: 1,
+        postos: [],
+        insumos: [],
+        parametros: {},
+        resultadoCalculo: null
+    };
+    
+    // Navegação entre passos
+    function proximoPasso(passo) {
+        // Validar passo atual antes de avançar
+        if (!validarPassoAtual()) {
+            return;
+        }
+        
+        // Ocultar passo atual
+        document.getElementById(`passo-${estadoWizard.passoAtual}`).style.display = 'none';
+        document.getElementById(`step-indicator-${estadoWizard.passoAtual}`).classList.remove('active');
+        
+        // Mostrar próximo passo
+        estadoWizard.passoAtual = passo;
+        document.getElementById(`passo-${passo}`).style.display = 'block';
+        document.getElementById(`step-indicator-${passo}`).classList.add('active');
+        
+        // Se for o passo 3, calcular automaticamente
+        if (passo === 3) {
+            calcularPreview();
+        }
+    }
+    
+    function voltarPasso(passo) {
+        document.getElementById(`passo-${estadoWizard.passoAtual}`).style.display = 'none';
+        document.getElementById(`step-indicator-${estadoWizard.passoAtual}`).classList.remove('active');
+        
+        estadoWizard.passoAtual = passo;
+        document.getElementById(`passo-${passo}`).style.display = 'block';
+        document.getElementById(`step-indicator-${passo}`).classList.add('active');
+    }
+    
+    function validarPassoAtual() {
+        if (estadoWizard.passoAtual === 1) {
+            if (estadoWizard.postos.length === 0) {
+                alert('Adicione pelo menos um posto de trabalho');
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    // Adicionar posto
+    function adicionarPosto() {
+        const id = Date.now();
+        const html = `
+            <div class="card mb-3" id="posto-${id}">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Cargo</label>
+                            <input type="text" class="form-control posto-cargo" placeholder="Ex: Porteiro">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Quantidade</label>
+                            <input type="number" class="form-control posto-quantidade" value="1" min="1">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Jornada</label>
+                            <select class="form-select posto-jornada">
+                                <option value="44h">44h</option>
+                                <option value="40h">40h</option>
+                                <option value="20h">20h</option>
+                                <option value="100h Mensal">100h Mensal</option>
+                                <option value="12x36_diurno">12x36 Diurno</option>
+                                <option value="12x36_noturno">12x36 Noturno</option>
+
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Salário Base</label>
+                            <input type="number" class="form-control posto-salario" placeholder="0.00" step="0.01">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Insalubridade</label>
+                            <input type="number" class="form-control posto-insalubridade" placeholder="0.00" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-1 d-flex align-items-end">
+                            <button class="btn btn-danger btn-sm w-100" onclick="removerPosto(${id})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.getElementById('lista-postos').insertAdjacentHTML('beforeend', html);
+    }
+    
+    function removerPosto(id) {
+        document.getElementById(`posto-${id}`).remove();
+    }
+    
+    // Adicionar insumo
+    function adicionarInsumo() {
+        const id = Date.now();
+        const html = `
+            <div class="card mb-3" id="insumo-${id}">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-2">
+                            <label class="form-label">Tipo</label>
+                            <select class="form-select insumo-tipo">
+                                <option value="uniforme">Uniforme</option>
+                                <option value="epi">EPI</option>
+                                <option value="material">Material</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Descrição</label>
+                            <input type="text" class="form-control insumo-descricao" placeholder="Ex: Uniforme completo">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Custo Unitário</label>
+                            <input type="number" class="form-control insumo-custo" placeholder="0.00" step="0.01">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Qtd/Posto</label>
+                            <input type="number" class="form-control insumo-quantidade" value="1" min="1">
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label">Meses</label>
+                            <input type="number" class="form-control insumo-periodicidade" value="12" min="1">
+                        </div>
+                        <div class="col-md-1 d-flex align-items-end">
+                            <button class="btn btn-danger btn-sm w-100" onclick="removerInsumo(${id})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.getElementById('lista-insumos').insertAdjacentHTML('beforeend', html);
+    }
+    
+    function removerInsumo(id) {
+        document.getElementById(`insumo-${id}`).remove();
+    }
+    
+    // Calcular preview
+    function calcularPreview() {
+        // Coletar dados dos postos
+        const postos = [];
+        document.querySelectorAll('[id^="posto-"]').forEach(el => {
+            postos.push({
+                cargo: el.querySelector('.posto-cargo').value,
+                quantidade_postos: parseInt(el.querySelector('.posto-quantidade').value),
+                jornada_tipo: el.querySelector('.posto-jornada').value,
+                salario_base: parseFloat(el.querySelector('.posto-salario').value),
+                adicional_insalubridade: parseFloat(el.querySelector('.posto-insalubridade').value) || 0
+            });
+        });
+        
+        // Coletar dados dos insumos
+        const insumos = [];
+        document.querySelectorAll('[id^="insumo-"]').forEach(el => {
+            insumos.push({
+                tipo: el.querySelector('.insumo-tipo').value,
+                descricao: el.querySelector('.insumo-descricao').value,
+                custo_unitario: parseFloat(el.querySelector('.insumo-custo').value),
+                quantidade_por_posto: parseInt(el.querySelector('.insumo-quantidade').value),
+                periodicidade_meses: parseInt(el.querySelector('.insumo-periodicidade').value),
+                cargo: 'todos'
+            });
+        });
+        
+        // Coletar parâmetros
+        const parametros = {
+            inss_patronal: parseFloat(document.getElementById('inss-patronal').value),
+            salario_educacao: parseFloat(document.getElementById('salario-educacao').value),
+            rat_sat: parseFloat(document.getElementById('rat-sat').value),
+            fap_multiplicador: parseFloat(document.getElementById('fap').value),
+            sesc_senac: parseFloat(document.getElementById('sesc-senac').value),
+            sebrae: parseFloat(document.getElementById('sebrae').value),
+            incra: parseFloat(document.getElementById('incra').value),
+            regime_tributario: document.getElementById('regime-tributario').value,
+            aliquota_pis: parseFloat(document.getElementById('aliquota-pis').value),
+            aliquota_cofins: parseFloat(document.getElementById('aliquota-cofins').value),
+            aliquota_iss: parseFloat(document.getElementById('aliquota-iss').value),
+            custos_indiretos_percentual: parseFloat(document.getElementById('custos-indiretos').value),
+            lucro_percentual: parseFloat(document.getElementById('lucro-percentual').value)
+        };
+        
+        // Enviar para API
+        fetch('/precificaja/servicos/nova-lei/api/preview', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                postos: postos,
+                insumos: insumos,
+                parametros: parametros
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.sucesso) {
+                estadoWizard.resultadoCalculo = data.resultado;
+                exibirResultados(data.resultado);
+            } else {
+                alert('Erro ao calcular: ' + data.erro);
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Erro ao processar cálculo');
+        });
+    }
+    
+    function exibirResultados(resultado) {
+        // Atualizar cards
+        const total = resultado.total_contrato.total_contrato;
+        document.getElementById('card-custo-total').textContent = formatarMoeda(total);
+        document.getElementById('card-preco-sugerido').textContent = formatarMoeda(total);
+        
+        // Atualizar tabela
+        const tbody = document.getElementById('tabela-resultados');
+        tbody.innerHTML = '';
+        
+        resultado.postos.forEach(posto => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${posto.cargo}</td>
+                <td>${posto.quantidade_postos}</td>
+                <td>${formatarMoeda(posto.modulo_1_remuneracao.total)}</td>
+                <td>${formatarMoeda(posto.modulo_2_encargos_beneficios.total)}</td>
+                <td>${formatarMoeda(posto.modulo_5_insumos.total)}</td>
+                <td>${formatarMoeda(posto.total_unitario)}</td>
+                <td>${formatarMoeda(posto.total_posto)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+    
+    function formatarMoeda(valor) {
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(valor);
+    }
+    
+    // Inicializar tooltips
+    document.addEventListener('DOMContentLoaded', function() {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
+        // Adicionar primeiro posto automaticamente
+        adicionarPosto();
+    });
+</script>
+
+{% endblock %}

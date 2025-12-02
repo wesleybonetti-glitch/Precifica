@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+
+{% block title %}Simulação de Propostas - Nova Lei{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header com Gradiente -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body bg-gradient-primary text-white rounded">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <h2 class="mb-1">
+                                <i class="fas fa-chart-line me-2"></i>Simulação de Propostas - Nova Lei
+                            </h2>
+                            <p class="mb-0 opacity-75">Gerencie e analise suas propostas de serviços com mão de obra</p>
+                        </div>
+                        <div class="text-end">
+                            <a href="/precificaja/servicos/nova-lei/calculadora" class="btn btn-light btn-sm">
+                                <i class="fas fa-plus me-1"></i>Nova Proposta
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cards de Estatísticas -->
+    <div class="row mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center p-3">
+                    <div class="text-primary fs-2 mb-2">
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                    <h5 class="mb-0 text-primary" id="totalPropostas">{{ registros|length }}</h5>
+                    <small class="text-muted">Total de Propostas</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center p-3">
+                    <div class="text-warning fs-2 mb-2">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <h5 class="mb-0 text-warning" id="totalHabilitacao">0</h5>
+                    <small class="text-muted">Em Habilitação</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 mt-3 mt-md-0">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center p-3">
+                    <div class="text-success fs-2 mb-2">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <h5 class="mb-0 text-success" id="totalAdjudica">0</h5>
+                    <small class="text-muted">Adjudicadas</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 mt-3 mt-md-0">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center p-3">
+                    <div class="text-danger fs-2 mb-2">
+                        <i class="fas fa-times-circle"></i>
+                    </div>
+                    <h5 class="mb-0 text-danger" id="totalPerdida">0</h5>
+                    <small class="text-muted">Perdidas</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-8">
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0">
+                                    <i class="fas fa-search text-muted"></i>
+                                </span>
+                                <input type="text" class="form-control border-start-0" id="campoBusca"
+                                       placeholder="Buscar por CNPJ, Razão Social, Processo ou Tipo de Serviço"
+                                       onkeyup="filtrarTabela()">
+                            </div>
+                        </div>
+                        <div class="col-8 col-md-3">
+                            <select class="form-select" id="filtroStatus" onchange="filtrarTabela()">
+                                <option value="">Todos os status</option>
+                                <option value="habilitação">Habilitação</option>
+                                <option value="adjudica">Adjudica</option>
+                                <option value="perdida">Perdida</option>
+                                <option value="anulada">Anulada</option>
+                                <option value="prazo vencido">Prazo Vencido</option>
+                            </select>
+                        </div>
+                        <div class="col-4 col-md-1 d-grid">
+                            <button type="button" class="btn btn-outline-secondary" onclick="limparFiltros()">
+                                <i class="fas fa-eraser me-1"></i>Limpar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela de Propostas -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom">
+                    <h6 class="mb-0">
+                        <i class="fas fa-table me-2"></i>Lista de Propostas
+                    </h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="tabelaSimulacao">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>CNPJ</th>
+                                    <th>Razão Social</th>
+                                    <th>Tipo de Serviço</th>
+                                    <th>Processo</th>
+                                    <th>Valor Total</th>
+                                    <th>Status</th>
+                                    <th>Data</th>
+                                    <th class="text-center">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for registro in registros %}
+                                <tr class="align-middle" data-row-id="{{ registro.id }}">
+                                    <td>{{ registro.cnpj }}</td>
+                                    <td>
+                                        <div class="text-truncate" style="max-width:200px" title="{{ registro.razao_social }}">
+                                            {{ registro.razao_social }}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ registro.tipo_servico }}</span>
+                                    </td>
+                                    <td>
+                                        <div class="text-truncate text-muted" style="max-width:150px" title="{{ registro.numero_processo }}">
+                                            {{ registro.numero_processo }}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <strong class="text-success">R$ {{ "{:,.2f}".format(registro.valor_total or 0) }}</strong>
+                                    </td>
+                                    <td>
+                                        {% if registro.status == 'habilitação' %}
+                                            <span class="badge bg-warning text-dark">
+                                                <i class="fas fa-clock me-1"></i>Habilitação
+                                            </span>
+                                        {% elif registro.status == 'adjudica' %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check-circle me-1"></i>Adjudica
+                                            </span>
+                                        {% elif registro.status == 'perdida' %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-times-circle me-1"></i>Perdida
+                                            </span>
+                                        {% elif registro.status == 'anulada' %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-ban me-1"></i>Anulada
+                                            </span>
+                                        {% elif registro.status == 'prazo vencido' %}
+                                            <span class="badge bg-dark">
+                                                <i class="fas fa-calendar-times me-1"></i>Prazo Vencido
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {{ registro.data_criacao.strftime('%d/%m/%Y') if registro.data_criacao else '-' }}
+                                        </small>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button type="button" class="btn btn-outline-primary" 
+                                                    onclick="visualizarProposta({{ registro.id }})"
+                                                    data-bs-toggle="tooltip" title="Visualizar">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success" 
+                                                    onclick="abrirModalEdicao({{ registro.id }})"
+                                                    data-bs-toggle="tooltip" title="Editar">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info" 
+                                                    onclick="gerarPDF({{ registro.id }})"
+                                                    data-bs-toggle="tooltip" title="Gerar PDF">
+                                                <i class="fas fa-file-pdf"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-warning" 
+                                                    onclick="gerarExcel({{ registro.id }})"
+                                                    data-bs-toggle="tooltip" title="Gerar Excel">
+                                                <i class="fas fa-file-excel"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger" 
+                                                    onclick="excluirProposta({{ registro.id }})"
+                                                    data-bs-toggle="tooltip" title="Excluir">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="8" class="text-center text-muted py-5">
+                                        <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
+                                        <p class="mb-0">Nenhuma proposta cadastrada ainda.</p>
+                                        <a href="/precificaja/servicos/nova-lei/calculadora" class="btn btn-primary mt-3">
+                                            <i class="fas fa-plus me-1"></i>Criar primeira proposta
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Visualização -->
+<div class="modal fade" id="modalVisualizacao" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-eye me-2"></i>Detalhes da Proposta
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="conteudoVisualizacao">
+                <!-- Conteúdo carregado via JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Fechar
+                </button>
+                <button type="button" class="btn btn-primary" onclick="gerarPDFModal()">
+                    <i class="fas fa-file-pdf"></i> Gerar PDF
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Atualizar estatísticas
+document.addEventListener('DOMContentLoaded', function() {
+    atualizarEstatisticas();
+    
+    // Inicializar tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+
+function atualizarEstatisticas() {
+    const linhas = document.querySelectorAll('#tabelaSimulacao tbody tr');
+    let habilitacao = 0, adjudica = 0, perdida = 0;
+    
+    linhas.forEach(linha => {
+        const status = linha.querySelector('td:nth-child(6)')?.textContent.toLowerCase();
+        if (status?.includes('habilitação')) habilitacao++;
+        if (status?.includes('adjudica')) adjudica++;
+        if (status?.includes('perdida')) perdida++;
+    });
+    
+    document.getElementById('totalHabilitacao').textContent = habilitacao;
+    document.getElementById('totalAdjudica').textContent = adjudica;
+    document.getElementById('totalPerdida').textContent = perdida;
+}
+
+function filtrarTabela() {
+    const busca = document.getElementById('campoBusca').value.toLowerCase();
+    const status = document.getElementById('filtroStatus').value.toLowerCase();
+    const linhas = document.querySelectorAll('#tabelaSimulacao tbody tr');
+    
+    linhas.forEach(linha => {
+        const textoLinha = linha.textContent.toLowerCase();
+        const statusLinha = linha.querySelector('td:nth-child(6)')?.textContent.toLowerCase() || '';
+        
+        const matchBusca = !busca || textoLinha.includes(busca);
+        const matchStatus = !status || statusLinha.includes(status);
+        
+        linha.style.display = (matchBusca && matchStatus) ? '' : 'none';
+    });
+}
+
+function limparFiltros() {
+    document.getElementById('campoBusca').value = '';
+    document.getElementById('filtroStatus').value = '';
+    filtrarTabela();
+}
+
+function visualizarProposta(id) {
+    fetch(`/precificaja/servicos/nova-lei/api/carregar/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.sucesso) {
+                mostrarDetalhes(data.cenario);
+            } else {
+                alert('Erro ao carregar proposta: ' + data.erro);
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Erro ao carregar proposta');
+        });
+}
+
+function mostrarDetalhes(cenario) {
+    const conteudo = document.getElementById('conteudoVisualizacao');
+    
+    // Montar HTML com detalhes da proposta
+    conteudo.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6 class="text-primary">Dados da Empresa</h6>
+                <table class="table table-sm">
+                    <tr><th>CNPJ:</th><td>${cenario.cnpj || '-'}</td></tr>
+                    <tr><th>Razão Social:</th><td>${cenario.razao_social || '-'}</td></tr>
+                    <tr><th>Endereço:</th><td>${cenario.endereco || '-'}</td></tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6 class="text-primary">Dados do Processo</h6>
+                <table class="table table-sm">
+                    <tr><th>Número:</th><td>${cenario.numero_processo || '-'}</td></tr>
+                    <tr><th>Tipo de Serviço:</th><td>${cenario.tipo_servico || '-'}</td></tr>
+                    <tr><th>Prazo:</th><td>${cenario.prazo_execucao || '-'} meses</td></tr>
+                    <tr><th>Local:</th><td>${cenario.local_execucao || '-'}</td></tr>
+                </table>
+            </div>
+        </div>
+        
+        <h6 class="text-primary mt-3">Resumo Financeiro</h6>
+        <div class="alert alert-success">
+            <h4>Valor Total: R$ ${formatarMoeda(cenario.valor_total || 0)}</h4>
+        </div>
+    `;
+    
+    const modal = new bootstrap.Modal(document.getElementById('modalVisualizacao'));
+    modal.show();
+}
+
+function editarProposta(id) {
+    window.location.href = `/precificaja/servicos/nova-lei/calculadora?editar=${id}`;
+}
+
+function gerarPDF(id) {
+    window.open(`/precificaja/servicos/nova-lei/api/export/pdf/${id}`, '_blank');
+}
+
+function gerarExcel(id) {
+    window.open(`/precificaja/servicos/nova-lei/api/export/excel/${id}`, '_blank');
+}
+
+function excluirProposta(id) {
+    if (confirm('Tem certeza que deseja excluir esta proposta?')) {
+        fetch(`/precificaja/servicos/nova-lei/api/excluir/${id}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.sucesso) {
+                location.reload();
+            } else {
+                alert('Erro ao excluir: ' + data.erro);
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Erro ao excluir proposta');
+        });
+    }
+}
+
+function formatarMoeda(valor) {
+    return new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(valor);
+}
+</script>
+
+<!-- Incluir Modal de Edição -->
+{% include 'nova_lei/modal_edicao.html' %}
+
+<!-- Script do Modal de Edição -->
+<script src="{{ url_for('static', filename='js/modal_edicao.js') }}"></script>
+
+{% endblock %}

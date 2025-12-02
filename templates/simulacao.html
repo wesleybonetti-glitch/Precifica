@@ -1,0 +1,1439 @@
+{% extends "base.html" %}
+
+{% block title %}Simulação de Disputa{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body bg-gradient-primary text-white rounded">
+          <div class="d-flex align-items-center justify-content-between">
+            <div>
+              <h2 class="mb-1"><i class="fas fa-calculator me-2"></i>Simulação de Disputa</h2>
+              <p class="mb-0 opacity-75">Simule e gerencie suas disputas comerciais</p>
+            </div>
+            <div class="text-end">
+              <div class="badge bg-light text-primary fs-6">
+                <i class="fas fa-chart-line me-1"></i>{{ registros|length }} Simulações
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-12 col-md-8">
+              <div class="input-group">
+                <span class="input-group-text bg-light border-end-0">
+                  <i class="fas fa-search text-muted"></i>
+                </span>
+                <input
+                  type="text"
+                  id="campoBusca"
+                  class="form-control border-start-0"
+                  placeholder="Buscar por CNPJ, Razão Social, Endereço ou Número do Processo"
+                  onkeyup="debounce(filtrarTabela, 300)()"
+                />
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <select id="filtroStatus" class="form-select" onchange="filtrarTabela()">
+                <option value="">🔍 Todos os Status</option>
+                <option value="Habilitação">⏳ Habilitação</option>
+                <option value="Adjudica">✅ Adjudica</option>
+                <option value="Perdida">❌ Perdida</option>
+                <option value="Anulada">🚫 Anulada</option>
+                <option value="Prazo Vencido">⏰ Prazo Vencido</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tabelaSimulacao">
+              <thead class="table-dark">
+                <tr>
+                  <th class="border-0 ps-4"><i class="fas fa-hashtag me-1"></i>ID</th>
+                  <th class="border-0"><i class="fas fa-building me-1"></i>CNPJ</th>
+                  <th class="border-0"><i class="fas fa-industry me-1"></i>Razão Social</th>
+                  <th class="border-0"><i class="fas fa-map-marker-alt me-1"></i>Endereço</th>
+                  <th class="border-0"><i class="fas fa-file-alt me-1"></i>Processo</th>
+                  <th class="border-0"><i class="fas fa-flag me-1"></i>Status</th>
+                  <th class="border-0 text-center pe-4"><i class="fas fa-cogs me-1"></i>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for registro in registros %}
+                <tr class="align-middle">
+                  <td class="ps-4"><span class="badge bg-light text-dark">#{{ registro.id }}</span></td>
+                  <td><span class="fw-medium">{{ registro.cnpj }}</span></td>
+                  <td>
+                    <div class="text-truncate" style="max-width: 200px;" title="{{ registro.razao_social }}">
+                      {{ registro.razao_social }}
+                    </div>
+                  </td>
+                  <td>
+                    <div class="text-truncate text-muted" style="max-width: 150px;" title="{{ registro.endereco }}">
+                      {{ registro.endereco }}
+                    </div>
+                  </td>
+                  <td><span class="badge bg-info">{{ registro.numero_processo }}</span></td>
+                  <td>
+                    {% if registro.status == 'Habilitação' %}
+                      <span class="badge bg-warning">⏳ {{ registro.status }}</span>
+                    {% elif registro.status == 'Adjudica' %}
+                      <span class="badge bg-success">✅ {{ registro.status }}</span>
+                    {% elif registro.status == 'Perdida' %}
+                      <span class="badge bg-danger">❌ {{ registro.status }}</span>
+                    {% elif registro.status == 'Anulada' %}
+                      <span class="badge bg-secondary">🚫 {{ registro.status }}</span>
+                    {% elif registro.status == 'Prazo Vencido' %}
+                      <span class="badge bg-dark">⏰ {{ registro.status }}</span>
+                    {% else %}
+                      <span class="badge bg-light text-dark">{{ registro.status }}</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-center pe-4">
+                    <div class="btn-group-vertical btn-group-sm" role="group">
+                      <button class="btn btn-outline-primary btn-sm mb-1" onclick="openModal({{ registro.id }})" title="Ver detalhes">
+                        <i class="fas fa-eye me-1"></i>Detalhes
+                      </button>
+                      <button class="btn btn-outline-warning btn-sm mb-1" onclick="abrirStatusModal({{ registro.id }}, '{{ registro.status }}')" title="Alterar status">
+                        <i class="fas fa-edit me-1"></i>Status
+                      </button>
+                      <button class="btn btn-outline-danger btn-sm" onclick="excluirProposta({{ registro.id }})" title="Excluir simulação">
+                        <i class="fas fa-trash me-1"></i>Excluir
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="row text-center">
+            <div class="col-6 col-md-3">
+              <div class="p-3">
+                <div class="text-primary fs-2 mb-1"><i class="fas fa-calculator"></i></div>
+                <h5 class="mb-0">{{ registros|length }}</h5>
+                <small class="text-muted">Total de Simulações</small>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3">
+                <div class="text-success fs-2 mb-1"><i class="fas fa-check-circle"></i></div>
+                <h5 class="mb-0">{{ registros|selectattr('status', 'equalto', 'Adjudica')|list|length }}</h5>
+                <small class="text-muted">Adjudicadas</small>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3">
+                <div class="text-warning fs-2 mb-1"><i class="fas fa-clock"></i></div>
+                <h5 class="mb-0">{{ registros|selectattr('status', 'equalto', 'Habilitação')|list|length }}</h5>
+                <small class="text-muted">Em Habilitação</small>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3">
+                <div class="text-danger fs-2 mb-1"><i class="fas fa-times-circle"></i></div>
+                <h5 class="mb-0">{{ registros|selectattr('status', 'equalto', 'Perdida')|list|length }}</h5>
+                <small class="text-muted">Perdidas</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-gradient-primary text-white border-0">
+        <h5 class="modal-title" id="editModalLabel"><i class="fas fa-chart-line me-2"></i>Simulação de Disputa</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body p-4">
+        <div id="loadingIndicator" class="text-center py-5" style="display:none;">
+          <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Carregando...</span></div>
+          <p class="mt-2 text-muted">Carregando dados da simulação...</p>
+        </div>
+
+        <div id="modalContent" style="display:none;">
+          <input type="hidden" id="registroId">
+
+          <div class="card border-0 bg-light mb-4">
+            <div class="card-body">
+              <h6 class="card-title text-primary mb-3"><i class="fas fa-info-circle me-2"></i>Informações da Simulação</h6>
+              <div class="row g-3">
+                <div class="col-12 col-md-6">
+                  <label for="cnpj" class="form-label fw-medium">CNPJ</label>
+                  <input type="text" class="form-control bg-white" id="cnpj" readonly>
+                </div>
+                <div class="col-12 col-md-6">
+                  <label for="razao_social" class="form-label fw-medium">Razão Social</label>
+                  <input type="text" class="form-control bg-white" id="razao_social" readonly>
+                </div>
+                <div class="col-12 col-md-6">
+                  <label for="endereco" class="form-label fw-medium">Endereço</label>
+                  <input type="text" class="form-control bg-white" id="endereco" readonly>
+                </div>
+                <div class="col-12 col-md-6">
+                  <label for="numero_processo" class="form-label fw-medium">Número do Processo</label>
+                  <input type="text" class="form-control bg-white" id="numero_processo" readonly>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card border-0 mb-4">
+            <div class="card-header bg-white border-bottom">
+              <h6 class="mb-0 text-primary"><i class="fas fa-boxes me-2"></i>Produtos da Simulação</h6>
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover mb-0" style="table-layout: fixed;">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="width:5%;">Item</th>
+                      <th style="width:18%;">Nome</th>
+                      <th style="width:12%;">Marca/Modelo</th>
+                      <th style="width:6%;">Unid</th>
+                      <th style="width:6%;">Qtd</th>
+                      <th style="width:8%;">Custo Unit.</th>
+                      <th style="width:8%;">Custo Total</th>
+                      <th style="width:8%;">Venda Unit.</th>
+                      <th style="width:8%;">Venda Total</th>
+                      <th style="width:12%;">Controle (URL)</th>
+                      <th style="width:10%;">Status</th>
+                      <th style="width:8%;" class="text-center"><i class="fas fa-box-open me-1"></i>Cadastrar</th>
+                      <th style="width:7%;" class="text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="produtosBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card-footer bg-light">
+              <button class="btn btn-success btn-sm" onclick="adicionarProduto()">
+                <i class="fas fa-plus me-1"></i>Adicionar Produto
+              </button>
+            </div>
+          </div>
+
+          <div class="card border-0 mb-4">
+            <div class="card-header bg-white border-bottom">
+              <h6 class="mb-0 text-primary"><i class="fas fa-calculator me-2"></i>Resumo Financeiro</h6>
+            </div>
+            <div class="card-body">
+              <div class="row g-3 mb-4">
+                <div class="col-12 col-md-6">
+                  <label for="frete" class="form-label fw-medium">Custo de Frete</label>
+                  <div class="input-group">
+                    <span class="input-group-text">R$</span>
+                    <input type="number" class="form-control" id="frete" step="0.01" oninput="debounce(calcularResumo, 400)()">
+                  </div>
+                </div>
+              </div>
+
+              <div class="row g-3">
+                <div class="col-12 col-md-6 col-lg-3">
+                  <div class="card bg-danger bg-opacity-10 border-danger border-opacity-25">
+                    <div class="card-body text-center p-3">
+                      <div class="text-danger fs-1 mb-2"><i class="fas fa-arrow-down"></i></div>
+                      <h6 class="text-danger mb-1">Custo Total</h6>
+                      <h4 class="text-danger mb-0" id="resumoCustoTotal">R$ 0,00</h4>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                  <div class="card bg-info bg-opacity-10 border-info border-opacity-25">
+                    <div class="card-body text-center p-3">
+                      <div class="text-info fs-1 mb-2"><i class="fas fa-boxes"></i></div>
+                      <h6 class="text-info mb-1">Quantidade</h6>
+                      <h4 class="text-info mb-0" id="resumoQuantidadeTotal">0</h4>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                  <div class="card bg-primary bg-opacity-10 border-primary border-opacity-25">
+                    <div class="card-body text-center p-3">
+                      <div class="text-primary fs-1 mb-2"><i class="fas fa-arrow-up"></i></div>
+                      <h6 class="text-primary mb-1">Valor Venda</h6>
+                      <h4 class="text-primary mb-0" id="resumoValorVendaTotal">R$ 0,00</h4>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                  <div class="card bg-success bg-opacity-10 border-success border-opacity-25">
+                    <div class="card-body text-center p-3">
+                      <div class="text-success fs-1 mb-2"><i class="fas fa-chart-line"></i></div>
+                      <h6 class="text-success mb-1">Lucro Total</h6>
+                      <h4 class="text-success mb-0" id="resumoLucroTotal">R$ 0,00</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row mt-3">
+                <div class="col-12">
+                  <div class="card bg-light">
+                    <div class="card-body">
+                      <div class="row text-center">
+                        <div class="col-4">
+                          <small class="text-muted">Imposto Total</small>
+                          <div class="fw-bold" id="resumoImpostoTotal">R$ 0,00</div>
+                        </div>
+                        <div class="col-4">
+                          <small class="text-muted">Margem de Lucro</small>
+                          <div class="fw-bold" id="resumoMargemLucro">0%</div>
+                        </div>
+                        <div class="col-4">
+                          <small class="text-muted">Ticket Médio</small>
+                          <div class="fw-bold" id="resumoTicketMedio">R$ 0,00</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+<div class="card border-0 shadow-sm mt-4">
+                <div class="card-header bg-white">
+                  <h6 class="mb-0 text-primary"><i class="fas fa-pie-chart me-2"></i>Divisão de Lucro</h6>
+                </div>
+                <div class="card-body">
+                  <div class="row align-items-center justify-content-center gy-3">
+                    <div class="col-12 col-lg-3 text-center">
+                      <label for="percentualEmpresa" class="form-label fw-medium">Reinvestimento (%)</label>
+                      <div class="input-group" style="max-width: 150px; margin: auto;">
+                        <input type="number" class="form-control" id="percentualEmpresa" value="20" min="0" max="100" oninput="calcularDivisaoLucro()">
+                        <span class="input-group-text">%</span>
+                      </div>
+                    </div>
+                    <div class="col-12 col-lg-9">
+                      <div class="row text-center gy-3 justify-content-around">
+                        <div class="col-12 col-md-4">
+                          <small class="text-muted">Lucro Líquido</small>
+                          <h5 class="mb-0" id="divisaoLucroLiquido">R$ 0,00</h5>
+                        </div>
+                        <div class="col-12 col-md-4">
+                          <small class="text-muted">Fica na Empresa</small>
+                          <h5 class="mb-0 text-info" id="divisaoFicaEmpresa">R$ 0,00</h5>
+                        </div>
+                        <div class="col-12 col-md-4">
+                          <small class="text-muted">Retirada</small>
+                          <h5 class="mb-0 text-success" id="divisaoRetirada">R$ 0,00</h5>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4" id="curvaSegurancaCard" style="display:none;">
+                <div class="card border-0 shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <h6 class="mb-0">Curva de Segurança — Margens alvo</h6>
+                      <div class="small text-muted">Imposto atual: <span id="curvaImposto">%0</span></div>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th>Alvo</th>
+                            <th class="text-end">Venda necessária</th>
+                            <th class="text-end">Lucro esperado</th>
+                            <th class="text-end">Δ vs. atual</th>
+                          </tr>
+                        </thead>
+                        <tbody id="curvaSegurancaBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3" id="curvaItensCarouselCard" style="display:none;">
+                <div class="card border-0 shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <h6 class="mb-0">Curva por Item (ABC) — Cenários unitários</h6>
+                      <div class="small text-muted">Cenários: A=10%, B=15%, C=30% | Imposto: <span id="curvaImposto2">%0</span></div>
+                    </div>
+                    <div class="position-relative">
+                      <button class="btn btn-light btn-sm abc-scroll prev" onclick="scrollABCCarousel(-1)" aria-label="Anterior">
+                        <i class="fas fa-chevron-left"></i>
+                      </button>
+                      <div id="curvaABCScroller" class="abc-scroller"></div>
+                      <button class="btn btn-light btn-sm abc-scroll next" onclick="scrollABCCarousel(1)" aria-label="Próximo">
+                        <i class="fas fa-chevron-right"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              </div>
+          </div>
+
+          <div class="card border-0">
+            <div class="card-header bg-white border-bottom">
+              <h6 class="mb-0 text-primary"><i class="fas fa-sticky-note me-2"></i>Observações</h6>
+            </div>
+            <div class="card-body">
+              <div class="mb-3">
+                <textarea id="observacaoProposta" class="form-control" rows="3" placeholder="Digite aqui alguma observação..."></textarea>
+              </div>
+              <div class="alert alert-warning border-0" role="alert">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Atenção:</strong> Tudo que for escrito será impresso na proposta PDF.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+     <div class="modal-footer bg-light border-0 d-flex justify-content-between">
+        <div>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+            <i class="fas fa-times me-1"></i>Fechar
+          </button>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-success" onclick="imprimirProposta()">
+            <i class="fas fa-print me-1"></i>Imprimir Proposta
+          </button>
+          <button type="button" class="btn btn-info" onclick="imprimirCatalogo()">
+            <i class="fas fa-book me-1"></i>Imprimir Catálogo
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="imprimirComposicaoCusto()">
+            <i class="fas fa-file-invoice-dollar me-1"></i>Composição de Custo
+          </button>
+          <button type="button" class="btn btn-primary" onclick="salvarSimulacao(this)">
+            <i class="fas fa-save me-1"></i>Salvar
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="statusModal" tabindex="-1" aria-labelledby="statusModalLabel">
+  <div class="modal-dialog">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-gradient-warning text-dark border-0">
+        <h5 class="modal-title" id="statusModalLabel"><i class="fas fa-edit me-2"></i>Alterar Status da Simulação</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="propostaIdStatus">
+        <label for="novoStatus" class="form-label fw-medium">Novo Status</label>
+        <select class="form-select" id="novoStatus">
+          <option value="Habilitação">⏳ Habilitação</option>
+          <option value="Adjudica">✅ Adjudica</option>
+          <option value="Perdida">❌ Perdida</option>
+          <option value="Anulada">🚫 Anulada</option>
+          <option value="Prazo Vencido">⏰ Prazo Vencido</option>
+        </select>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+        <button type="button" class="btn btn-warning" onclick="alterarStatus(this)">
+          <i class="fas fa-save me-1"></i>Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de Cadastro Rápido de Produto -->
+<div class="modal fade" id="modalCadastroRapidoProduto" tabindex="-1" aria-labelledby="modalCadastroRapidoLabel">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-success text-white border-0">
+        <h5 class="modal-title" id="modalCadastroRapidoLabel">
+          <i class="fas fa-box-open me-2"></i>Cadastrar Produto na Base
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <form id="formCadastroRapido" enctype="multipart/form-data">
+        <div class="modal-body">
+          <input type="hidden" id="rapid_produto_index" name="produto_index">
+
+          <div class="alert alert-info border-0 mb-3">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Dica:</strong> Ao cadastrar este produto na base, ele ficará disponível para uso em catálogos e outras simulações.
+          </div>
+
+          <div class="mb-3">
+            <label for="rapid_nome" class="form-label fw-medium">
+              Nome do Produto <span class="text-danger">*</span>
+            </label>
+            <input type="text" class="form-control bg-light" id="rapid_nome" name="nome" required readonly>
+            <small class="text-muted">Este nome vem da simulação e não pode ser alterado aqui.</small>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="rapid_marca" class="form-label fw-medium">Marca</label>
+                <input type="text" class="form-control" id="rapid_marca" name="marca" placeholder="Ex: Samsung">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="rapid_modelo" class="form-label fw-medium">Modelo</label>
+                <input type="text" class="form-control" id="rapid_modelo" name="modelo" placeholder="Ex: Galaxy S23">
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="rapid_custo" class="form-label fw-medium">
+                  Custo (R$) <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                  <span class="input-group-text">R$</span>
+                  <input type="number" step="0.01" class="form-control" id="rapid_custo" name="custo" required min="0.01" placeholder="0,00">
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="rapid_unidade_medida" class="form-label fw-medium">Unidade de Medida</label>
+                <input type="text" class="form-control" id="rapid_unidade_medida" name="unidade_medida" value="UN" placeholder="UN, KG, M, etc.">
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="rapid_fornecedor_id" class="form-label fw-medium">Fornecedor</label>
+            <select class="form-select" id="rapid_fornecedor_id" name="fornecedor_id">
+              <option value="">Carregando fornecedores...</option>
+            </select>
+            <small class="text-muted">Opcional. Selecione o fornecedor deste produto.</small>
+          </div>
+
+          <div class="mb-3">
+            <label for="rapid_foto" class="form-label fw-medium">
+              <i class="fas fa-camera me-1"></i>Foto do Produto
+            </label>
+            <input type="file" class="form-control" id="rapid_foto" name="foto" accept="image/*">
+            <small class="text-muted">Formatos aceitos: PNG, JPG, JPEG, GIF, WEBP</small>
+            <div id="preview_foto" class="mt-2"></div>
+          </div>
+
+          <div class="mb-3">
+            <label for="rapid_descricao" class="form-label fw-medium">
+              <i class="fas fa-align-left me-1"></i>Descrição
+            </label>
+            <textarea class="form-control" id="rapid_descricao" name="descricao" rows="4" placeholder="Descreva as características, especificações técnicas e detalhes do produto..."></textarea>
+            <small class="text-muted">Esta descrição aparecerá nos catálogos impressos.</small>
+          </div>
+        </div>
+
+        <div class="modal-footer border-0 bg-light">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+            <i class="fas fa-times me-1"></i>Cancelar
+          </button>
+          <button type="submit" class="btn btn-success">
+            <i class="fas fa-save me-1"></i>Cadastrar na Base
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const basePath = "/precificaja";
+  let produtos = [];
+  let impostoPercentual = 0;
+  let currentModal = null;
+  let ultimoResumo = {};
+
+  // ============ Helpers ============
+  function formatCurrency(n) {
+    const x = Number(n) || 0;
+    return "R$ " + x.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function debounce(func, wait) {
+    let timeout;
+    return function (...args) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+  }
+  window.debounce = debounce;
+
+  // ============ Ações da lista ============
+  window.openModal = function (id) {
+    const modal = document.getElementById('editModal');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const modalContent = document.getElementById('modalContent');
+
+    loadingIndicator.style.display = 'block';
+    modalContent.style.display = 'none';
+
+    currentModal = new bootstrap.Modal(modal);
+    currentModal.show();
+
+    document.getElementById("registroId").value = id;
+
+    fetch(`${basePath}/simulacao/${id}`)
+      .then(r => { if (!r.ok) throw new Error('Falha ao obter dados'); return r.json(); })
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+
+        document.getElementById("cnpj").value = data.cnpj || "";
+        document.getElementById("razao_social").value = data.razao_social || "";
+        document.getElementById("endereco").value = data.endereco || "";
+        document.getElementById("numero_processo").value = data.numero_processo || "";
+
+        produtos = data.produtos || [];
+
+        if (typeof data.imposto_percentual !== 'undefined') {
+          impostoPercentual = parseFloat(data.imposto_percentual) || 0;
+        }
+
+        renderizarProdutos();
+
+        if (data.resumo) {
+          document.getElementById("frete").value = data.resumo.frete || 0;
+          atualizarResumoVisual(data.resumo);
+        }
+
+        loadingIndicator.style.display = 'none';
+        modalContent.style.display = 'block';
+      })
+      .catch(err => {
+        loadingIndicator.style.display = 'none';
+        modalContent.innerHTML =
+          '<div class="alert alert-danger"><h5>Erro ao carregar</h5><p>' + err.message + '</p></div>';
+        modalContent.style.display = 'block';
+      });
+  };
+
+  window.abrirStatusModal = function (id, statusAtual) {
+    document.getElementById('propostaIdStatus').value = id;
+    document.getElementById('novoStatus').value = statusAtual || 'Habilitação';
+    new bootstrap.Modal(document.getElementById('statusModal')).show();
+  };
+
+  window.excluirProposta = function (id) {
+    if (!confirm('Tem certeza que deseja excluir esta simulação?')) return;
+    fetch(`${basePath}/proposta/${id}/excluir`, { method: 'DELETE' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("Falha ao excluir")))
+      .then(() => location.reload())
+      .catch(e => alert(e.message));
+  };
+
+  // ============ Renderização da tabela de produtos ============
+  // Em simulacao.html
+
+function renderizarProdutos() {
+    const tbody = document.getElementById("produtosBody");
+    tbody.innerHTML = "";
+
+    produtos.forEach((produto, index) => {
+        const row = document.createElement('tr');
+        const custoTotal = (Number(produto.custo) || 0) * (Number(produto.quantidade) || 0);
+        const vendaTotal = (Number(produto.venda) || 0) * (Number(produto.quantidade) || 0);
+
+        // Correção: O 'onchange' agora passa 'this.value' diretamente como string, sem parseFloat().
+        row.innerHTML = `
+            <td><input type="text" class="form-control form-control-sm" value="${produto.numero_item || ''}" onchange="atualizarProduto(${index}, 'numero_item', this.value.trim())"></td>
+            <td><input type="text" class="form-control form-control-sm" value="${produto.nome || ''}" onchange="atualizarProduto(${index}, 'nome', this.value)"></td>
+            <td><input type="text" class="form-control form-control-sm" value="${produto.marca_modelo || ''}" onchange="atualizarProduto(${index}, 'marca_modelo', this.value)"></td>
+            <td><input type="text" class="form-control form-control-sm" value="${produto.unidade_medida || 'UN'}" onchange="atualizarProduto(${index}, 'unidade_medida', this.value)"></td>
+            <td><input type="number" class="form-control form-control-sm" value="${produto.quantidade || 0}" min="0" step="any" onchange="atualizarProduto(${index}, 'quantidade', this.value)"></td>
+            <td><input type="number" class="form-control form-control-sm" value="${produto.custo || 0}" min="0" step="any" onchange="atualizarProduto(${index}, 'custo', this.value)"></td>
+            <td class="text-end align-middle fw-bold">${formatCurrency(custoTotal)}</td>
+            <td><input type="number" class="form-control form-control-sm" value="${produto.venda || 0}" min="0" step="any" onchange="atualizarProduto(${index}, 'venda', this.value)"></td>
+            <td class="text-end align-middle fw-bold text-success">${formatCurrency(vendaTotal)}</td>
+            <td><input type="url" class="form-control form-control-sm" value="${produto.url_produto || ''}" placeholder="https://..." onchange="atualizarProduto(${index}, 'url_produto', this.value.trim())"></td>
+            <td>
+                <select class="form-select form-select-sm" onchange="atualizarProduto(${index}, 'status_item', this.value)">
+                    <option value="Aguardando" ${produto.status_item === 'Aguardando' ? 'selected' : ''}>Aguardando</option>
+                    <option value="Comprado" ${produto.status_item === 'Comprado' ? 'selected' : ''}>Comprado</option>
+                    <option value="Enviado" ${produto.status_item === 'Enviado' ? 'selected' : ''}>Enviado</option>
+                    <option value="Entregue" ${produto.status_item === 'Entregue' ? 'selected' : ''}>Entregue</option>
+                </select>
+            </td>
+            <td class="text-center">
+                ${produto.produto_fornecedor_id ?
+                    `<span class="badge bg-success d-inline-flex align-items-center" title="Produto cadastrado na base de dados">
+                        <i class="fas fa-check me-1"></i> Cadastrado
+                    </span>` :
+                    `<button class="btn btn-sm btn-outline-success"
+                            onclick="abrirCadastroRapido(${index})"
+                            title="Cadastrar este produto na base de dados">
+                        <i class="fas fa-box-open"></i>
+                    </button>`
+                }
+            </td>
+            <td class="text-center">
+                <button class="btn btn-danger btn-sm" onclick="removerProduto(${index})" title="Remover"><i class="fas fa-trash"></i></button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+    calcularResumo();
+}
+
+// Em simulacao.html
+
+window.atualizarProduto = function (index, campo, valor) {
+    if (!produtos[index]) return;
+
+    // Correção: Para campos numéricos, não usamos mais parseFloat aqui.
+    // O valor é mantido como string e será tratado corretamente no backend.
+    // Para quantidade, garantimos que seja um número inteiro.
+    if (campo === 'quantidade') {
+        produtos[index][campo] = parseInt(valor, 10) || 0;
+    } else {
+        produtos[index][campo] = valor;
+    }
+
+    const row = document.getElementById("produtosBody").rows[index];
+    if(row) {
+        // Os cálculos visuais ainda podem usar Number() para simplicidade
+        const custoTotal = (Number(produtos[index].custo) || 0) * (Number(produtos[index].quantidade) || 0);
+        const vendaTotal = (Number(produtos[index].venda) || 0) * (Number(produtos[index].quantidade) || 0);
+        row.cells[6].textContent = formatCurrency(custoTotal);
+        row.cells[8].textContent = formatCurrency(vendaTotal);
+    }
+
+    debounce(calcularResumo, 250)();
+};
+
+  window.adicionarProduto = function () {
+    produtos.push({
+      numero_item: '',
+      nome: '',
+      marca_modelo: '',
+      unidade_medida: 'UN',
+      quantidade: 0,
+      custo: 0,
+      venda: 0,
+      url_produto: '',
+      status_item: 'Aguardando'
+    });
+    renderizarProdutos();
+  };
+
+  window.removerProduto = function (index) {
+    if (!confirm('Remover este produto?')) return;
+    produtos.splice(index, 1);
+    renderizarProdutos();
+  };
+
+    // ============ Divisão de Lucro ============
+    window.calcularDivisaoLucro = function() {
+    const lucroLiquido = ultimoResumo.lucro_total || 0;
+    const percentualEmpresa = parseFloat(document.getElementById('percentualEmpresa').value) || 0;
+
+    const ficaEmpresa = lucroLiquido * (percentualEmpresa / 100);
+    const retirada = lucroLiquido - ficaEmpresa;
+
+    document.getElementById('divisaoLucroLiquido').textContent = formatCurrency(lucroLiquido);
+    document.getElementById('divisaoFicaEmpresa').textContent = formatCurrency(ficaEmpresa);
+    document.getElementById('divisaoRetirada').textContent = formatCurrency(retirada);
+}
+
+
+  // ============ Curvas — Config & Helpers ============
+  const metasGlobais = [10, 15, 30];                 // metas para o total
+  const metasCenarios = { A: 10, B: 15, C: 30 };      // cenários por item
+  const metasABC = { A: 10, B: 15, C: 30 };           // (mantido para badge/classe)
+  const ABC_CORTES = { A: 0.80, B: 0.95 };            // 80% A, 15% B, resto C
+
+  function _safeFmt(n) { return isFinite(n) ? formatCurrency(n) : "—"; }
+  function _safeDelta(n) {
+    if (!isFinite(n)) return "—";
+    const sign = n >= 0 ? "+" : "–";
+    return sign + " " + formatCurrency(Math.abs(n));
+  }
+  function _vendaNecessaria(custoBase, t, margem) {
+    const denom = 1 - t - margem; // t e margem são frações
+    if (denom <= 0) return NaN;
+    return custoBase / denom;
+  }
+  function _freteTotalAtual(resumo) {
+    const inputFrete = Number(document.getElementById("frete")?.value) || 0;
+    const f = (resumo && typeof resumo.frete !== "undefined") ? Number(resumo.frete) : inputFrete;
+    return Number.isFinite(f) ? f : 0;
+  }
+
+  // ============ Curva — Total ============
+  function renderCurvaSeguranca(resumo) {
+    try {
+      const t = (Number(impostoPercentual) || 0) / 100;
+      const custoTotal = Number(resumo?.custo_total) || 0;
+      const vendaAtual = Number(resumo?.valor_venda_total) || 0;
+      const frete = _freteTotalAtual(resumo);
+      const c = custoTotal + frete;
+
+      const rows = metasGlobais.map(p => {
+        const m = p / 100;
+        const Vreq = _vendaNecessaria(c, t, m);
+        const lucroReq = isFinite(Vreq) ? (Vreq * (1 - t) - c) : NaN;
+        const delta = isFinite(Vreq) ? (Vreq - vendaAtual) : NaN;
+        return `<tr>
+          <td>${p}%</td>
+          <td class="text-end">${_safeFmt(Vreq)}</td>
+          <td class="text-end">${_safeFmt(lucroReq)}</td>
+          <td class="text-end">${_safeDelta(delta)}</td>
+        </tr>`;
+      }).join("");
+
+      const impostoSpan = document.getElementById("curvaImposto");
+      if (impostoSpan) impostoSpan.textContent = (Number(impostoPercentual) || 0).toFixed(2) + "%";
+
+      const tbody = document.getElementById("curvaSegurancaBody");
+      if (tbody) tbody.innerHTML = rows;
+
+      const card = document.getElementById("curvaSegurancaCard");
+      if (card) card.style.display = "block";
+    } catch (e) {
+      console.warn("renderCurvaSeguranca:", e);
+    }
+  }
+
+  // ============ Curva — ABC (classe para badge) ============
+  function classificarABC(produtos) {
+    const vendas = produtos.map((p, i) => ({
+      i,
+      venda: (Number(p.venda) || 0) * (Number(p.quantidade) || 0)
+    }));
+    const total = vendas.reduce((s, x) => s + x.venda, 0);
+    vendas.sort((a, b) => b.venda - a.venda);
+    let acum = 0;
+    const classePorIndex = {};
+    for (const v of vendas) {
+      const share = total > 0 ? v.venda / total : 0;
+      acum += share;
+      if (acum <= ABC_CORTES.A) {
+        classePorIndex[v.i] = "A";
+      } else if (acum <= ABC_CORTES.B) {
+        classePorIndex[v.i] = "B";
+      } else {
+        classePorIndex[v.i] = "C";
+      }
+    }
+    return { classePorIndex, totalVenda: total };
+  }
+
+  // ============ Curva por Item — Carrossel ============
+  function renderCurvaABCCarousel(resumo) {
+    try {
+      const card = document.getElementById("curvaItensCarouselCard");
+      const scroller = document.getElementById("curvaABCScroller");
+      if (!card || !scroller) return;
+
+      if (!Array.isArray(produtos) || produtos.length === 0) {
+        card.style.display = "none";
+        scroller.innerHTML = "";
+        return;
+      }
+
+      const t = (Number(impostoPercentual) || 0) / 100;
+      const Vtot = Number(resumo?.valor_venda_total) || 0;
+      const Ftot = _freteTotalAtual(resumo);
+      const { classePorIndex } = classificarABC(produtos);
+
+      const impostoSpan2 = document.getElementById("curvaImposto2");
+      if (impostoSpan2) impostoSpan2.textContent = (Number(impostoPercentual) || 0).toFixed(2) + "%";
+
+      scroller.innerHTML = produtos.map((p, idx) => {
+        const qtd = Number(p.quantidade) || 0;
+        const custoUnit = Number(p.custo) || 0;
+        const vendaUnit = Number(p.venda) || 0;
+        const custoItem = custoUnit * qtd;
+        const vendaItem = vendaUnit * qtd;
+
+        const share = Vtot > 0 ? (vendaItem / Vtot) : 0;
+        const freteItem = Ftot * share;
+        const c = custoItem + freteItem;
+
+        const classe = classePorIndex[idx] || "C";
+        const badgeClass = classe === 'A' ? 'bg-danger'
+                         : classe === 'B' ? 'bg-warning text-dark'
+                         : 'bg-secondary';
+
+        // Cenários A/B/C
+        const cenarios = Object.entries(metasCenarios).map(([label, pct]) => {
+          const m = pct / 100;
+          const VreqTotal = _vendaNecessaria(c, t, m);
+          const unitReq = (isFinite(VreqTotal) && qtd > 0) ? (VreqTotal / qtd) : NaN;
+          const lucroReq = isFinite(VreqTotal) ? (VreqTotal * (1 - t) - c) : NaN;
+          return `
+            <div class="border rounded p-2 mb-2">
+              <div class="d-flex justify-content-between">
+                <span class="fw-semibold">Cenário ${label}</span>
+                <span class="badge bg-light text-dark">${pct}%</span>
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span>Preço unit. necessário</span>
+                <span>${_safeFmt(unitReq)}</span>
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span>Lucro total</span>
+                <span>${_safeFmt(lucroReq)}</span>
+              </div>
+            </div>`;
+        }).join("");
+
+        return `
+          <div class="abc-card">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div class="me-2" style="min-width:0;">
+                <div class="text-muted small">Item ${(p.numero_item ?? (idx+1)).toString()}</div>
+                <div class="fw-semibold text-truncate" title="${p.nome ?? ''}">${p.nome ?? ''}</div>
+                <div class="small text-muted text-truncate" title="${p.marca_modelo ?? ''}">${p.marca_modelo ?? ''}</div>
+              </div>
+              <span class="badge ${badgeClass}">${classe}</span>
+            </div>
+
+            <div class="small text-muted mb-2">
+              Qtd: ${qtd} &nbsp;|&nbsp; Custo unit: ${formatCurrency(custoUnit)} &nbsp;|&nbsp; Venda atual: ${formatCurrency(vendaUnit)}
+            </div>
+
+            ${cenarios}
+
+            <div class="d-flex justify-content-between small mt-2">
+              <span>Frete alocado</span>
+              <span>${formatCurrency(freteItem)}</span>
+            </div>
+          </div>`;
+      }).join("");
+
+      card.style.display = "block";
+    } catch (e) {
+      console.warn("renderCurvaABCCarousel:", e);
+    }
+  }
+
+  window.scrollABCCarousel = function (dir) {
+    const scroller = document.getElementById("curvaABCScroller");
+    if (!scroller) return;
+    const card = scroller.querySelector(".abc-card");
+    const delta = card ? (card.getBoundingClientRect().width + 16) : 320;
+    scroller.scrollBy({ left: dir * delta, behavior: 'smooth' });
+  };
+
+  // ============ Resumo (desconta frete + imposto) ============
+  function atualizarResumoVisual(resumo) {
+    ultimoResumo = resumo; // Armazena o último resumo
+    const qtdTotal = (Array.isArray(produtos) ? produtos : [])
+      .reduce((s, p) => s + (Number(p.quantidade) || 0), 0);
+
+    document.getElementById("resumoCustoTotal").textContent      = formatCurrency(resumo.custo_total);
+    document.getElementById("resumoValorVendaTotal").textContent = formatCurrency(resumo.valor_venda_total);
+    document.getElementById("resumoLucroTotal").textContent      = formatCurrency(resumo.lucro_total);
+    document.getElementById("resumoImpostoTotal").textContent    = formatCurrency(resumo.imposto_total);
+    document.getElementById("resumoQuantidadeTotal").textContent = qtdTotal;
+
+    const margem = resumo.valor_venda_total > 0 ? (resumo.lucro_total / resumo.valor_venda_total * 100) : 0;
+    document.getElementById("resumoMargemLucro").textContent = margem.toFixed(1) + "%";
+
+    const ticket = qtdTotal > 0 ? (resumo.valor_venda_total / qtdTotal) : 0;
+    document.getElementById("resumoTicketMedio").textContent = formatCurrency(ticket);
+
+    // >>> Curvas
+    renderCurvaSeguranca(resumo);
+    renderCurvaABCCarousel(resumo);
+
+    // >>> Divisão de Lucro
+    calcularDivisaoLucro();
+  }
+
+  window.calcularResumo = function () {
+    let custoTotal = 0, quantidadeTotal = 0, vendaTotal = 0;
+    for (const p of (produtos || [])) {
+      custoTotal += (Number(p.custo) || 0) * (Number(p.quantidade) || 0);
+      vendaTotal += (Number(p.venda) || 0) * (Number(p.quantidade) || 0);
+      quantidadeTotal += (Number(p.quantidade) || 0);
+    }
+
+    const frete = Number(document.getElementById("frete").value) || 0;
+    const impostoTotal = vendaTotal * ((Number(impostoPercentual) || 0) / 100);
+    const lucroTotal = vendaTotal - (custoTotal + frete + impostoTotal);
+
+    atualizarResumoVisual({
+      custo_total: custoTotal,
+      valor_venda_total: vendaTotal,
+      lucro_total: lucroTotal,
+      imposto_total: impostoTotal,
+      frete: frete
+    });
+  };
+// In your simulacao.html file
+
+window.imprimirCatalogo = function () {
+    const id = document.getElementById('registroId').value;
+    if (!id) return alert('ID da simulação não encontrado');
+
+    // CÓDIGO ATUAL COM ERRO
+    // window.open(`${basePath}/simulacao/${id}/catalogo_pdf`, '_blank');
+
+    // CÓDIGO CORRIGIDO 👇
+    window.location.href = `${basePath}/simulacao/${id}/catalogo_pdf`;
+};
+  // ADICIONE ESTA NOVA FUNÇÃO (ou edite a versão anterior)
+  window.imprimirComposicaoCusto = function () {
+    const id = document.getElementById('registroId').value;
+    if (!id) {
+        return alert('ID da simulação não encontrado');
+    }
+    // CORREÇÃO: Altere a URL para a nova rota específica de produtos
+    window.open(`${basePath}/simulacao/${id}/composicao_custo_produtos_pdf`, '_blank');
+  };
+
+  window.imprimirProposta = function () {
+    const id = document.getElementById('registroId').value;
+    const obs = encodeURIComponent(document.getElementById('observacaoProposta').value || "");
+    if (!id) return alert('ID da simulação não encontrado');
+    window.open(`${basePath}/proposta/${id}/imprimir?obs=${obs}`, '_blank');
+  };
+
+  window.alterarStatus = function (btn) {
+    const id = document.getElementById('propostaIdStatus').value;
+    const novoStatus = document.getElementById('novoStatus').value;
+    if (!id || !novoStatus) return alert('Dados incompletos.');
+
+    const texto = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Salvando...';
+    fetch(`${basePath}/proposta/${id}/alterar_status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: novoStatus })
+    })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('Falha ao alterar status')))
+    .then(() => location.reload())
+    .catch(e => alert(e.message))
+    .finally(() => { btn.disabled = false; btn.innerHTML = texto; });
+  };
+
+  window.salvarSimulacao = function (btn) {
+    const registroId = document.getElementById('registroId').value;
+    const frete = Number(document.getElementById("frete").value) || 0;
+    const payload = { registro_id: registroId, produtos, frete };
+
+    const texto = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Salvando...';
+
+    fetch(`${basePath}/simulacao/salvar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => { if (data.success) { alert('Salvo!'); location.reload(); } else { throw new Error(data.error || 'Erro ao salvar'); } })
+    .catch(e => { console.error(e); alert(e.message); })
+    .finally(() => { btn.disabled = false; btn.innerHTML = texto; });
+  };
+
+  // ============ Filtro da tabela ============
+  window.filtrarTabela = function () {
+    const busca = (document.getElementById("campoBusca").value || "").toLowerCase();
+    const filtroStatus = (document.getElementById("filtroStatus").value || "").toLowerCase();
+    const linhas = document.querySelectorAll("#tabelaSimulacao tbody tr");
+
+    linhas.forEach(linha => {
+      let mostrar = true;
+      const texto = linha.textContent.toLowerCase();
+      if (busca && !texto.includes(busca)) mostrar = false;
+      if (filtroStatus) {
+        const st = linha.cells[5].textContent.toLowerCase();
+        if (!st.includes(filtroStatus)) mostrar = false;
+      }
+      linha.style.display = mostrar ? "" : "none";
+    });
+  };
+
+  // ===== Autocomplete de produtos (não invasivo) =====
+  function attachAutocomplete(row, index) {
+    try {
+      const tdNome = row.cells[1];
+      if (!tdNome) return;
+
+      tdNome.style.position = 'relative';
+      const input = tdNome.querySelector('input');
+      if (!input) return;
+
+      // Evitar múltiplos listeners
+      if (input.dataset.acBound === '1') return;
+      input.dataset.acBound = '1';
+
+      const list = document.createElement('div');
+      list.className = 'ac-list shadow';
+      list.style.display = 'none';
+      tdNome.appendChild(list);
+
+      let acTimer = null;
+
+      input.addEventListener('input', function() {
+        const termo = (this.value || '').trim();
+        if (acTimer) clearTimeout(acTimer);
+        if (termo.length < 2) { list.style.display='none'; list.innerHTML=''; return; }
+
+        acTimer = setTimeout(() => {
+          fetch(`${basePath}/api/buscar_produtos?q=` + encodeURIComponent(termo))
+            .then(r => r.ok ? r.json() : [])
+            .then(sugestoes => {
+              if (!Array.isArray(sugestoes) || sugestoes.length === 0) {
+                list.style.display='none'; list.innerHTML=''; return;
+              }
+              list.innerHTML = sugestoes.map((s, i) => `
+                <button type="button" class="ac-item" data-i="${i}">
+                  <div class="fw-semibold text-start">${s.nome || ''}</div>
+                  <div class="small text-muted text-start">${s.marca_modelo || ''} · ${s.unidade_medida || 'UN'} · R$ ${(Number(s.custo)||0).toFixed(2)}</div>
+                  <div class="small text-muted text-start">${s.origem || ''}</div>
+                </button>`).join('');
+
+              // Click to apply
+              Array.from(list.querySelectorAll('.ac-item')).forEach((btn, i) => {
+                btn.addEventListener('click', () => {
+                  const s = sugestoes[i];
+                  if (!s) return;
+                  produtos[index].nome = s.nome || '';
+                  produtos[index].marca_modelo = s.marca_modelo || '';
+                  produtos[index].unidade_medida = (s.unidade_medida || 'UN');
+                  produtos[index].custo = Number(s.custo) || 0;
+
+                  renderizarProdutos();
+                });
+              });
+
+              list.style.display = 'block';
+            })
+            .catch(() => { list.style.display='none'; list.innerHTML=''; });
+        }, 250);
+      });
+
+      // Fecha a lista ao clicar fora
+      document.addEventListener('click', function(e) {
+        if (!tdNome.contains(e.target)) list.style.display = 'none';
+      });
+
+      // Foco reabre se houver itens
+      input.addEventListener('focus', () => {
+        if (list.innerHTML.trim()) list.style.display = 'block';
+      });
+
+    } catch (e) { console.warn('attachAutocomplete', e); }
+  }
+
+  // ============================================================================
+  // FUNÇÕES DE CADASTRO RÁPIDO DE PRODUTO
+  // ============================================================================
+
+  /**
+   * Abre o modal de cadastro rápido de produto
+   */
+  window.abrirCadastroRapido = function(index) {
+    const produto = produtos[index];
+
+    if (!produto) {
+      alert('Produto não encontrado!');
+      return;
+    }
+
+    // Preencher campos do formulário
+    document.getElementById('rapid_produto_index').value = index;
+    document.getElementById('rapid_nome').value = produto.nome || '';
+    document.getElementById('rapid_custo').value = produto.custo || '';
+    document.getElementById('rapid_unidade_medida').value = produto.unidade_medida || 'UN';
+
+    // Limpar campos editáveis
+    document.getElementById('rapid_marca').value = '';
+    document.getElementById('rapid_modelo').value = '';
+    document.getElementById('rapid_descricao').value = '';
+    document.getElementById('rapid_foto').value = '';
+    document.getElementById('preview_foto').innerHTML = '';
+
+    // Pré-preencher marca/modelo se já existir no formato "Marca - Modelo"
+    if (produto.marca_modelo) {
+      const partes = produto.marca_modelo.split(' - ');
+      if (partes.length >= 2) {
+        document.getElementById('rapid_marca').value = partes[0].trim();
+        document.getElementById('rapid_modelo').value = partes.slice(1).join(' - ').trim();
+      } else if (partes.length === 1) {
+        document.getElementById('rapid_marca').value = partes[0].trim();
+      }
+    }
+
+    // Carregar fornecedores
+    carregarFornecedoresRapido();
+
+    // Abrir modal
+    const modal = new bootstrap.Modal(document.getElementById('modalCadastroRapidoProduto'));
+    modal.show();
+  };
+
+  /**
+   * Carrega a lista de fornecedores via AJAX
+   */
+  async function carregarFornecedoresRapido() {
+    try {
+      const response = await fetch(`${basePath}/fornecedor_produtos/listar_json`);
+      const data = await response.json();
+
+      const select = document.getElementById('rapid_fornecedor_id');
+      select.innerHTML = '<option value="">Sem fornecedor</option>';
+
+      if (data.success && Array.isArray(data.fornecedores)) {
+        data.fornecedores.forEach(f => {
+          const option = document.createElement('option');
+          option.value = f.id;
+          option.textContent = `${f.nome_empresa} (${f.cnpj})`;
+          select.appendChild(option);
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao carregar fornecedores:', error);
+      const select = document.getElementById('rapid_fornecedor_id');
+      select.innerHTML = '<option value="">Erro ao carregar fornecedores</option>';
+    }
+  }
+
+  /**
+   * Preview da foto selecionada
+   */
+  const inputFoto = document.getElementById('rapid_foto');
+  if (inputFoto) {
+    inputFoto.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      const preview = document.getElementById('preview_foto');
+
+      if (file) {
+        // Validar tamanho (máx 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+          alert('A foto deve ter no máximo 5MB!');
+          e.target.value = '';
+          preview.innerHTML = '';
+          return;
+        }
+
+        // Validar tipo
+        const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+          alert('Formato de imagem não suportado! Use PNG, JPG, JPEG, GIF ou WEBP.');
+          e.target.value = '';
+          preview.innerHTML = '';
+          return;
+        }
+
+        // Mostrar preview
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          preview.innerHTML = `
+            <div class="mt-2">
+              <img src="${e.target.result}" class="img-thumbnail" style="max-width: 200px;">
+              <p class="small text-muted mt-1">
+                <i class="fas fa-check-circle text-success me-1"></i>
+                Foto selecionada: ${file.name} (${(file.size / 1024).toFixed(2)} KB)
+              </p>
+            </div>
+          `;
+        };
+        reader.readAsDataURL(file);
+      } else {
+        preview.innerHTML = '';
+      }
+    });
+  }
+
+  /**
+   * Submissão do formulário de cadastro rápido
+   */
+  const form = document.getElementById('formCadastroRapido');
+  if (form) {
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      const submitBtn = this.querySelector('button[type="submit"]');
+      const originalText = submitBtn.innerHTML;
+
+      try {
+        // Desabilitar botão e mostrar loading
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Cadastrando...';
+
+        const formData = new FormData(this);
+        const index = parseInt(document.getElementById('rapid_produto_index').value);
+
+        // Enviar requisição
+        const response = await fetch(`${basePath}/produtos_fornecedores/cadastro_rapido`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          // Atualizar produto na simulação com ID do produto cadastrado
+          produtos[index].produto_fornecedor_id = result.produto.id;
+
+          // Atualizar marca/modelo se foram informados
+          if (result.produto.marca || result.produto.modelo) {
+            const marca = result.produto.marca || '';
+            const modelo = result.produto.modelo || '';
+            produtos[index].marca_modelo = marca && modelo
+              ? `${marca} - ${modelo}`
+              : (marca || modelo);
+          }
+
+          // Fechar modal
+          const modalElement = document.getElementById('modalCadastroRapidoProduto');
+          const modalInstance = bootstrap.Modal.getInstance(modalElement);
+          if (modalInstance) {
+            modalInstance.hide();
+          }
+
+          // Re-renderizar produtos
+          renderizarProdutos();
+
+          // Mostrar mensagem de sucesso
+          const alertDiv = document.createElement('div');
+          alertDiv.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+          alertDiv.style.zIndex = '9999';
+          alertDiv.innerHTML = `
+            <i class="fas fa-check-circle me-2"></i>
+            <strong>Sucesso!</strong> Produto "${result.produto.nome}" cadastrado na base de dados.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          `;
+          document.body.appendChild(alertDiv);
+
+          // Remover alerta após 5 segundos
+          setTimeout(() => {
+            alertDiv.remove();
+          }, 5000);
+
+        } else {
+          // Mostrar erro
+          alert('Erro ao cadastrar produto: ' + (result.error || 'Erro desconhecido'));
+        }
+
+      } catch (error) {
+        console.error('Erro ao cadastrar produto:', error);
+        alert('Erro ao cadastrar produto. Verifique sua conexão e tente novamente.');
+
+      } finally {
+        // Restaurar botão
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    });
+  }
+
+  // ============================================================================
+  // FIM DAS FUNÇÕES DE CADASTRO RÁPIDO
+  // ============================================================================
+
+});
+</script>
+
+<style>
+.bg-gradient-primary { background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); }
+.bg-gradient-warning { background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%); }
+.card { transition: all 0.2s ease; border-radius: 1rem; }
+.card:hover { transform: translateY(-1px); }
+.table-hover tbody tr:hover { background-color: rgba(0, 123, 255, 0.05); }
+.btn-group-vertical .btn { border-radius: 0.375rem !important; margin-bottom: 2px; }
+.modal-content { border-radius: 1rem; }
+.form-control:focus { border-color: #007bff; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); }
+.text-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bg-opacity-10 { --bs-bg-opacity: 0.1; }
+.border-opacity-25 { --bs-border-opacity: 0.25; }
+.spinner-border { width: 3rem; height: 3rem; }
+
+/* Carrossel ABC */
+.abc-scroller {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: .25rem .25rem .5rem;
+}
+.abc-scroller::-webkit-scrollbar { height: 8px; }
+.abc-scroller::-webkit-scrollbar-thumb { background: rgba(0,0,0,.15); border-radius: 4px; }
+.abc-card {
+  min-width: 300px;
+  max-width: 340px;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  border: 1px solid rgba(0,0,0,.075);
+  border-radius: .75rem;
+  padding: .75rem;
+  background: #fff;
+  box-shadow: 0 .125rem .25rem rgba(0,0,0,.05);
+}
+.abc-scroll {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+.abc-scroll.prev { left: -8px; }
+.abc-scroll.next { right: -8px; }
+@media (max-width: 576px) {
+  .abc-card { min-width: 85%; }
+  .abc-scroll.prev { left: 0; }
+  .abc-scroll.next { right: 0; }
+}
+
+/* ===== Autocomplete ===== */
+.ac-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 1050;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.15);
+  border-radius: .5rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.ac-list .ac-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: .5rem .75rem;
+  border: 0;
+  background: transparent;
+}
+.ac-list .ac-item:hover { background: rgba(0,0,0,.04); }
+
+</style>
+{% endblock %}

@@ -1,0 +1,85 @@
+<div class="modal fade" id="modalFornecedor" tabindex="-1" aria-labelledby="modalFornecedorLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalFornecedorLabel">Cadastrar Fornecedor</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formFornecedor" method="POST" action="{{ url_for('cadastrar_fornecedor_produto') }}">
+
+                    <!-- CNPJ -->
+                    <div class="mb-3">
+                        <label for="cnpj" class="form-label">CNPJ</label>
+                        <input type="text" class="form-control" id="cnpj" name="cnpj" required>
+                        <button type="button" class="btn btn-info mt-2" onclick="consultarCNPJ()">Buscar CNPJ</button>
+                    </div>
+
+                    <!-- Nome da Empresa -->
+                    <div class="mb-3">
+                        <label for="nome_empresa" class="form-label">Nome da Empresa</label>
+                        <input type="text" class="form-control" id="nome_empresa" name="nome_empresa" required>
+                    </div>
+
+                    <!-- Endereço -->
+                    <div class="mb-3">
+                        <label for="endereco" class="form-label">Endereço</label>
+                        <input type="text" class="form-control" id="endereco" name="endereco">
+                    </div>
+
+                    <!-- Atividade Principal -->
+                    <div class="mb-3">
+                        <label for="atividade_principal" class="form-label">Atividade Principal</label>
+                        <input type="text" class="form-control" id="atividade_principal" name="atividade_principal">
+                    </div>
+
+                    <!-- Contato da Empresa -->
+                    <div class="mb-3">
+                        <label for="contato" class="form-label">Contato da Empresa</label>
+                        <input type="text" class="form-control" id="contato" name="contato">
+                    </div>
+
+                    <!-- Nome do Vendedor -->
+                    <div class="mb-3">
+                        <label for="nome_vendedor" class="form-label">Nome do Vendedor</label>
+                        <input type="text" class="form-control" id="nome_vendedor" name="nome_vendedor">
+                    </div>
+
+                    <!-- Contato do Vendedor -->
+                    <div class="mb-3">
+                        <label for="contato_vendedor" class="form-label">Contato do Vendedor</label>
+                        <input type="text" class="form-control" id="contato_vendedor" name="contato_vendedor">
+                    </div>
+
+                    <!-- Comentários -->
+                    <div class="mb-3">
+                        <label for="comentario" class="form-label">Comentários</label>
+                        <textarea class="form-control" id="comentario" name="comentario" rows="3"></textarea>
+                    </div>
+
+                    <!-- Botão de Envio -->
+                    <button type="submit" class="btn btn-success">Salvar Fornecedor</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function consultarCNPJ() {
+        var cnpj = document.getElementById("cnpj").value;
+        fetch("/precificaja/api/consulta_cnpj/" + cnpj)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert("Erro: " + data.error);
+                } else {
+                     document.getElementById("nome_empresa").value = data.razao_social;
+                    document.getElementById("endereco").value = data.endereco;
+                    document.getElementById("atividade_principal").value = data.atividade_principal || "";
+                    document.getElementById("contato").value = data.contato || "";
+                }
+            })
+            .catch(error => console.error('Erro:', error));
+    }
+</script>

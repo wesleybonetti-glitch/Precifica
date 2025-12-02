@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+    <form action="/calcular" method="POST">
+        <label for="custo_unitario">Custo Unitário:</label>
+        <input type="number" step="0.01" id="custo_unitario" name="custo_unitario" required>
+
+        <label for="impostos">Impostos (%):</label>
+        <input type="number" step="0.01" id="impostos" name="impostos" required>
+
+        <label for="transporte">Custo de Transporte:</label>
+        <input type="number" step="0.01" id="transporte" name="transporte" required>
+
+        <label for="margem_lucro">Margem de Lucro (%):</label>
+        <input type="number" step="0.01" id="margem_lucro" name="margem_lucro" required>
+
+        <button type="submit">Calcular</button>
+    </form>
+{% endblock %}

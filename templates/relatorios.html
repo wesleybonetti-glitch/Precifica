@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Relatórios{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <h2 class="text-center mb-4">Relatórios</h2>
+
+    <!-- Filtros -->
+    <form id="formFiltros" class="row g-3 mb-4">
+        <div class="col-12 col-md-4">
+            <label for="dataInicio" class="form-label">Data Início</label>
+            <input type="date" id="dataInicio" name="data_inicio" class="form-control" value="{{ data_inicio or '' }}">
+        </div>
+        <div class="col-12 col-md-4">
+            <label for="dataFim" class="form-label">Data Fim</label>
+            <input type="date" id="dataFim" name="data_fim" class="form-control" value="{{ data_fim or '' }}">
+        </div>
+        <div class="col-12 col-md-4">
+            <label for="status" class="form-label">Status</label>
+            <select id="status" name="status" class="form-select">
+                <option value="">Todos</option>
+                <option value="Habilitação" {% if status == 'Habilitação' %}selected{% endif %}>Habilitação</option>
+                <option value="Adjudica" {% if status == 'Adjudica' %}selected{% endif %}>Adjudica</option>
+                <option value="Perdida" {% if status == 'Perdida' %}selected{% endif %}>Perdida</option>
+                <option value="Anulada" {% if status == 'Anulada' %}selected{% endif %}>Anulada</option>
+                <option value="Prazo Vencido" {% if status == 'Prazo Vencido' %}selected{% endif %}>Prazo Vencido</option>
+            </select>
+        </div>
+        <div class="col-12 text-end">
+            <button type="submit" class="btn btn-primary w-100 w-md-auto">Filtrar</button>
+        </div>
+    </form>
+
+    <!-- Tabela -->
+    <div class="table-responsive">
+        <table class="table table-hover table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>CNPJ</th>
+                    <th>Razão Social</th>
+                    <th>Endereço</th>
+                    <th>Status</th>
+                    <th>Data Criação</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for registro in registros %}
+                <tr>
+                    <td>{{ registro.id }}</td>
+                    <td>{{ registro.cnpj }}</td>
+                    <td>{{ registro.razao_social }}</td>
+                    <td>{{ registro.endereco }}</td>
+                    <td>{{ registro.status }}</td>
+                    <td>{{ registro.criado_em.strftime('%Y-%m-%d') }}</td>
+                    <td>
+                        <button class="btn btn-info btn-sm w-100 mb-1 mb-md-0" onclick="abrirDetalhes({{ registro.id }})">Detalhes</button>
+                        <button class="btn btn-danger btn-sm w-100" onclick="excluirRegistro({{ registro.id }})">Excluir</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modalDetalhes" tabindex="-1" aria-labelledby="modalDetalhesLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalDetalhesLabel">Detalhes do Registro</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h5>Produtos</h5>
+                <div class="table-responsive">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Marca/Modelo</th>
+                                <th>Custo</th>
+                                <th>Quantidade</th>
+                                <th>Venda</th>
+                            </tr>
+                        </thead>
+                        <tbody id="produtosBody"></tbody>
+                    </table>
+                </div>
+                <h5>Resumo</h5>
+                <ul class="list-unstyled">
+                    <li><strong>Custo de Frete:</strong> <span id="custoFrete">R$ 0,00</span></li>
+                    <li><strong>Custo Total:</strong> <span id="custoTotal">R$ 0,00</span></li>
+                    <li><strong>Quantidade Total:</strong> <span id="quantidadeTotal">0</span></li>
+                    <li><strong>Imposto Total:</strong> <span id="impostoTotal">R$ 0,00</span></li>
+                    <li><strong>Valor de Venda Total:</strong> <span id="valorTotalVenda">R$ 0,00</span></li>
+                    <li><strong>Lucro Total:</strong> <span id="lucroTotal">R$ 0,00</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function abrirDetalhes(registroId) {
+    fetch(`/precificaja/relatorios/detalhes/${registroId}`)
+        .then(response => response.json())
+        .then(data => {
+            const produtosBody = document.getElementById('produtosBody');
+            produtosBody.innerHTML = '';
+            data.produtos.forEach(produto => {
+                produtosBody.insertAdjacentHTML('beforeend', `
+                    <tr>
+                        <td>${produto.nome || '-'}</td>
+                        <td>${produto.marca_modelo || '-'}</td>
+                        <td>${(produto.custo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td>${produto.quantidade || 0}</td>
+                        <td>${(produto.venda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    </tr>
+                `);
+            });
+
+            const totais = data.totais || {};
+            document.getElementById('custoFrete').textContent = (totais.frete || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            document.getElementById('custoTotal').textContent = (totais.custo_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            document.getElementById('quantidadeTotal').textContent = totais.quantidade_total || 0;
+            document.getElementById('impostoTotal').textContent = (totais.imposto_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            document.getElementById('valorTotalVenda').textContent = (totais.valor_total_venda || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            document.getElementById('lucroTotal').textContent = (totais.lucro_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+            new bootstrap.Modal(document.getElementById('modalDetalhes')).show();
+        })
+        .catch(err => {
+            console.error('Erro ao carregar detalhes:', err);
+            alert('Erro ao carregar os detalhes do registro. Tente novamente mais tarde.');
+        });
+}
+
+function excluirRegistro(registroId) {
+    if (confirm('Tem certeza que deseja excluir este registro e seus produtos associados?')) {
+        fetch(`/precificaja/relatorios/excluir/${registroId}`, {
+            method: 'DELETE',
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Erro ao excluir registro.');
+                }
+            })
+            .catch(err => console.error('Erro ao excluir registro:', err));
+    }
+}
+</script>
+{% endblock %}

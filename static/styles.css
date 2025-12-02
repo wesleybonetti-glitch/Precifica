@@ -1,0 +1,111 @@
+/* Reset Básico */
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow-x: hidden;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f8f9fa;
+}
+
+/* ===== PADRONIZAÇÃO DE COMPONENTES ===== */
+
+/* Cards com novo estilo */
+.card {
+    border: 1px solid #dee2e6;
+    border-radius: var(--border-radius, 10px);
+    box-shadow: var(--box-shadow, 0 4px 20px rgba(0,0,0,0.08));
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background-color: #ffffff;
+    border-bottom: 1px solid #dee2e6;
+    font-weight: 600;
+}
+
+/* Modals com novo estilo */
+.modal-content {
+    border-radius: var(--border-radius, 10px);
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+/* Botões principais com a cor primária */
+.btn-primary {
+    background-color: var(--primary-color, #0056b3);
+    border-color: var(--primary-color, #0056b3);
+}
+.btn-primary:hover {
+    background-color: var(--accent-color, #007bff);
+    border-color: var(--accent-color, #007bff);
+}
+
+/* Tabelas */
+.table {
+    background-color: #fff;
+}
+.table thead th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+}
+
+/* Estilo para abas de navegação */
+#tabsEdicao .nav-link {
+    color: #495057;
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-right: 5px;
+    font-weight: 500;
+    border-radius: 0;
+}
+#tabsEdicao .nav-link:hover {
+    border-bottom-color: #dee2e6;
+}
+#tabsEdicao .nav-link.active {
+    color: var(--primary-color, #0056b3);
+    border-bottom-color: var(--primary-color, #0056b3);
+}
+
+/* Estilos para formulários */
+form label {
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+.form-control, .form-select {
+    border-radius: var(--border-radius, 10px);
+}
+.form-control:focus, .form-select:focus {
+    border-color: var(--accent-color, #007bff);
+    box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
+}
+
+
+/* 🔥 Estilo para avaliação com estrelas */
+.avaliacao {
+    margin-bottom: 20px;
+}
+.estrelas {
+    display: flex;
+    align-items: center;
+    font-size: 24px;
+}
+.estrela {
+    cursor: pointer;
+    color: #ccc;
+    transition: color 0.2s;
+}
+.estrela.selected,
+.estrela:hover,
+.estrela:hover ~ .estrela {
+    color: #ffc107; /* Amarelo para estrelas */
+}
+.nota {
+    margin-left: 10px;
+    font-size: 16px;
+    font-weight: bold;
+}

@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+
+{% block title %}Propostas Salvas{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="text-center">Propostas Salvas</h1>
+
+    <!-- Campo de Busca -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <input type="text" id="campoBusca" class="form-control" placeholder="Buscar por Processo, Razão Social ou CNPJ" onkeyup="buscarProposta()">
+        </div>
+    </div>
+
+    <!-- Verifica se há propostas -->
+    {% if propostas %}
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped" id="tabelaPropostas">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Processo</th>
+                    <th>CNPJ</th>
+                    <th>Razão Social</th>
+                    <th>Valor Total (R$)</th>
+                    <th>Criado Por</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for proposta in propostas %}
+                <tr id="linha-{{ proposta.id }}">
+                    <td>{{ proposta.id }}</td>
+                    <td>{{ proposta.numero_processo }}</td>
+                    <td>{{ proposta.cnpj }}</td>
+                    <td>{{ proposta.razao_social }}</td>
+                    <td>{{ proposta.valor_total }}</td>
+                    <td>{{ proposta.criador }}</td>
+                    <td id="status-{{ proposta.id }}">{{ proposta.status }}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm mb-2 w-100" data-bs-toggle="modal" data-bs-target="#detalhesModal" onclick="carregarDetalhes({{ proposta.id }})">
+                            <i class="fas fa-eye"></i> Detalhes
+                        </button>
+                        <button class="btn btn-warning btn-sm mb-2 w-100" data-bs-toggle="modal" data-bs-target="#statusModal" onclick="abrirStatusModal({{ proposta.id }}, '{{ proposta.status }}')">
+                            <i class="fas fa-edit"></i> Alterar Status
+                        </button>
+                        <button class="btn btn-danger btn-sm w-100" onclick="excluirProposta({{ proposta.id }})">
+                            <i class="fas fa-trash"></i> Excluir
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-warning text-center mt-4" role="alert">
+        Nenhuma proposta registrada.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal para Detalhes -->
+<div class="modal fade" id="detalhesModal" tabindex="-1" aria-labelledby="detalhesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detalhesModalLabel">Detalhes da Proposta</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Tabela de Produtos -->
+                <div class="table-responsive">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Produto</th>
+                                <th>Marca/Modelo</th>
+                                <th>Custo</th>
+                                <th>Quantidade</th>
+                                <th>Venda</th>
+                                <th>Lucro</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detalhesBody"></tbody>
+                    </table>
+                </div>
+                <!-- Resumo -->
+                <div class="mt-4">
+                    <h5>Resumo</h5>
+                    <table class="table table-bordered">
+                        <tbody>
+                            <tr>
+                                <th>Custo Total</th>
+                                <td id="resumoCustoTotal">R$ 0,00</td>
+                            </tr>
+                            <tr>
+                                <th>Custo de Frete</th>
+                                <td id="resumoCustoFrete">R$ 0,00</td>
+                            </tr>
+                            <tr>
+                                <th>Quantidade Total</th>
+                                <td id="resumoQuantidadeTotal">0</td>
+                            </tr>
+                            <tr>
+                                <th>Referência Total</th>
+                                <td id="resumoReferenciaTotal">R$ 0,00</td>
+                            </tr>
+                            <tr>
+                                <th>Imposto Total</th>
+                                <td id="resumoImpostoTotal">R$ 0,00</td>
+                            </tr>
+                            <tr>
+                                <th>Valor de Venda Total</th>
+                                <td id="resumoVendaTotal">R$ 0,00</td>
+                            </tr>
+                            <tr>
+                                <th>Lucro Total</th>
+                                <td id="resumoLucroTotal">R$ 0,00</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                 <!-- Campo de Observação -->
+   <!-- Campo de Observação -->
+<div class="mt-4">
+    <label for="observacaoProposta" class="form-label"><strong>Observação:</strong></label>
+    <textarea id="observacaoProposta" class="form-control" rows="3" placeholder="Digite aqui alguma observação..."></textarea>
+
+    <!-- 🔴 ALERTA: Tudo que for escrito será impresso no PDF -->
+    <div class="alert alert-warning mt-2" role="alert">
+        <i class="fas fa-exclamation-triangle"></i> <strong>Atenção:</strong> Tudo o que for escrito na observação será impresso na proposta PDF.
+    </div>
+</div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                <a href="#" id="btnImprimirProposta" class="btn btn-success" target="_blank">Imprimir Proposta</a>
+            </div>
+        </div>
+    </div>
+
+
+<!-- Modal para Alterar Status -->
+<div class="modal fade" id="statusModal" tabindex="-1" aria-labelledby="statusModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="statusModalLabel">Alterar Status da Proposta</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="propostaIdStatus">
+                <label for="novoStatus" class="form-label">Novo Status</label>
+                <select class="form-control" id="novoStatus">
+                    <option value="Habilitação">Habilitação</option>
+                    <option value="Adjudica">Adjudica</option>
+                    <option value="Perdida">Perdida</option>
+                    <option value="Anulada">Anulada</option>
+                    <option value="Prazo Vencido">Prazo Vencido</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                <button type="button" class="btn btn-primary" onclick="alterarStatus()">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+
+<script>
+// Prefixo base para URLs
+// Prefixo base para URLs
+const basePath = "/precificaja";
+
+// Função para formatar números em moeda brasileira no formato R$ 0.000,00
+function formatarMoeda(valor) {
+    return "R$ " + valor.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+// Atualiza a URL do botão de impressão ao alterar a observação
+function atualizarLinkImpressao(propostaId) {
+    const inputObservacao = document.getElementById("observacaoProposta").value;
+    const btnImprimirProposta = document.getElementById("btnImprimirProposta");
+
+    if (btnImprimirProposta) {
+        btnImprimirProposta.href = `${basePath}/proposta/${propostaId}/imprimir?obs=${encodeURIComponent(inputObservacao)}`;
+    }
+}
+
+async function carregarDetalhes(propostaId) {
+    const detalhesBody = document.getElementById("detalhesBody");
+    const resumoCustoTotal = document.getElementById("resumoCustoTotal");
+    const resumoCustoFrete = document.getElementById("resumoCustoFrete");
+    const resumoQuantidadeTotal = document.getElementById("resumoQuantidadeTotal");
+    const resumoReferenciaTotal = document.getElementById("resumoReferenciaTotal");
+    const resumoImpostoTotal = document.getElementById("resumoImpostoTotal");
+    const resumoVendaTotal = document.getElementById("resumoVendaTotal");
+    const resumoLucroTotal = document.getElementById("resumoLucroTotal");
+    const btnImprimirProposta = document.getElementById("btnImprimirProposta");
+    const inputObservacao = document.getElementById("observacaoProposta");
+
+    // Limpa os valores anteriores
+    detalhesBody.innerHTML = "";
+    resumoCustoTotal.textContent = "R$ 0,00";
+    resumoCustoFrete.textContent = "R$ 0,00";
+    resumoQuantidadeTotal.textContent = "0";
+    resumoReferenciaTotal.textContent = "R$ 0,00";
+    resumoImpostoTotal.textContent = "R$ 0,00";
+    resumoVendaTotal.textContent = "R$ 0,00";
+    resumoLucroTotal.textContent = "R$ 0,00";
+    inputObservacao.value = ""; // Limpa o campo de observação
+
+    try {
+        const response = await fetch(`${basePath}/proposta/${propostaId}/detalhes`);
+        if (!response.ok) throw new Error("Erro ao carregar os detalhes da proposta.");
+
+        const { produtos, totais, obs } = await response.json();
+
+        let freteUnico = 0;
+        let freteRegistrado = false;
+
+        produtos.forEach((produto) => {
+            const lucroPorProduto = (produto.venda - produto.custo) * produto.quantidade;
+            if (!freteRegistrado && produto.frete) {
+                freteUnico = produto.frete;
+                freteRegistrado = true;
+            }
+
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${produto.nome}</td>
+                <td>${produto.marca_modelo}</td>
+                <td>${formatarMoeda(produto.custo)}</td>
+                <td>${produto.quantidade}</td>
+                <td>${formatarMoeda(produto.venda)}</td>
+                <td>${formatarMoeda(lucroPorProduto)}</td>
+            `;
+            detalhesBody.appendChild(row);
+        });
+
+        resumoCustoTotal.textContent = formatarMoeda(totais.custoTotal);
+        resumoCustoFrete.textContent = formatarMoeda(freteUnico);
+        resumoQuantidadeTotal.textContent = totais.quantidadeTotal;
+        resumoReferenciaTotal.textContent = formatarMoeda(totais.referenciaTotal);
+        resumoImpostoTotal.textContent = formatarMoeda(totais.impostoTotal);
+        resumoVendaTotal.textContent = formatarMoeda(totais.vendaTotal);
+        resumoLucroTotal.textContent = formatarMoeda(totais.lucroTotal);
+
+        inputObservacao.value = obs || ""; // Preenche a observação
+
+        // Atualiza a URL de impressão corretamente
+        atualizarLinkImpressao(propostaId);
+
+        // Adiciona um evento para atualizar a URL ao digitar no campo de observação
+        inputObservacao.addEventListener("input", () => atualizarLinkImpressao(propostaId));
+
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao carregar os detalhes da proposta.");
+    }
+}
+
+
+
+// Função para buscar propostas na tabela
+function buscarProposta() {
+    const input = document.getElementById("campoBusca").value.toLowerCase();
+    const linhas = document.querySelectorAll("#tabelaPropostas tbody tr");
+
+    linhas.forEach((linha) => {
+        const textoLinha = linha.textContent.toLowerCase();
+        linha.style.display = textoLinha.includes(input) ? "" : "none";
+    });
+}
+
+// Função para excluir proposta
+async function excluirProposta(propostaId) {
+    if (!confirm("Tem certeza que deseja excluir esta proposta?")) return;
+
+    try {
+        const response = await fetch(`${basePath}/proposta/${propostaId}/excluir`, { method: "DELETE" });
+        if (!response.ok) throw new Error("Erro ao excluir proposta.");
+
+        alert("Proposta excluída com sucesso.");
+        document.getElementById(`linha-${propostaId}`).remove();
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao excluir a proposta.");
+    }
+}
+
+// Função para alterar o status de uma proposta
+async function alterarStatus() {
+    const propostaId = document.getElementById("propostaIdStatus").value;
+    const novoStatus = document.getElementById("novoStatus").value;
+
+    try {
+        const response = await fetch(`${basePath}/proposta/${propostaId}/alterar_status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: novoStatus }),
+        });
+
+        if (!response.ok) throw new Error("Erro ao alterar o status.");
+
+        const data = await response.json();
+        if (data.success) {
+            alert("Status alterado com sucesso!");
+            document.getElementById(`status-${propostaId}`).textContent = novoStatus;
+
+            // Remover da lista se o status for um dos que deve sumir
+            if (["Adjudica", "Perdida", "Anulada", "Prazo Vencido"].includes(novoStatus)) {
+                const linha = document.querySelector(`#status-${propostaId}`).closest("tr");
+                if (linha) linha.remove();
+            }
+
+            // Fechar o modal após a atualização
+            const statusModal = document.getElementById("statusModal");
+            if (statusModal) {
+                const modal = bootstrap.Modal.getInstance(statusModal);
+                modal.hide();
+            }
+        } else {
+            alert(`Erro: ${data.error}`);
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao alterar o status da proposta.");
+    }
+}
+
+// Função para abrir o modal de status
+function abrirStatusModal(propostaId, statusAtual) {
+    document.getElementById("propostaIdStatus").value = propostaId;
+    document.getElementById("novoStatus").value = statusAtual;
+}
+
+</script>
+
+
+{% endblock %}

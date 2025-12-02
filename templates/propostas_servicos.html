@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Propostas de Serviços{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="text-center">Propostas de Serviços Salvas</h1>
+
+    <!-- Campo de Busca -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <input type="text" id="campoBusca" class="form-control" placeholder="Buscar por Processo, Razão Social ou CNPJ" onkeyup="buscarProposta()">
+        </div>
+    </div>
+
+    <!-- Verifica se há propostas -->
+    {% if propostas %}
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped" id="tabelaPropostas">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Processo</th>
+                    <th>CNPJ</th>
+                    <th>Razão Social</th>
+                    <th>Criado Por</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for proposta in propostas %}
+                <tr id="linha-{{ proposta.id }}">
+                    <td>{{ proposta.id }}</td>
+                    <td>{{ proposta.numero_processo }}</td>
+                    <td>{{ proposta.cnpj }}</td>
+                    <td>{{ proposta.razao_social }}</td>
+                    <td>{{ proposta.criador }}</td>
+                    <td id="status-{{ proposta.id }}">{{ proposta.status }}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm mb-2 w-100" data-bs-toggle="modal" data-bs-target="#detalhesModal" onclick="carregarDetalhes({{ proposta.id }})">
+                            <i class="fas fa-eye"></i> Detalhes
+                        </button>
+                        <button class="btn btn-warning btn-sm mb-2 w-100" data-bs-toggle="modal" data-bs-target="#statusModal" onclick="abrirStatusModal({{ proposta.id }}, '{{ proposta.status }}')">
+                            <i class="fas fa-edit"></i> Alterar Status
+                        </button>
+                        <button class="btn btn-danger btn-sm w-100" onclick="excluirProposta({{ proposta.id }})">
+                            <i class="fas fa-trash"></i> Excluir
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-warning text-center mt-4" role="alert">
+        Nenhuma proposta registrada.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal para Detalhes -->
+<div class="modal fade" id="detalhesModal" tabindex="-1" aria-labelledby="detalhesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detalhesModalLabel">Detalhes da Proposta</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Tabela de Serviços -->
+                <div class="table-responsive">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Serviço</th>
+                                <th>Descrição</th>
+                                <th>Valor Unitário</th>
+                                <th>Quantidade</th>
+                                <th>Valor Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detalhesBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Observação -->
+                <div class="mt-4">
+                    <label for="observacaoProposta" class="form-label"><strong>Observação:</strong></label>
+                    <textarea id="observacaoProposta" class="form-control" rows="3" placeholder="Digite aqui alguma observação..."></textarea>
+                    <div class="alert alert-warning mt-2" role="alert">
+                        <i class="fas fa-exclamation-triangle"></i> <strong>Atenção:</strong> Tudo o que for escrito na observação será impresso na proposta PDF.
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                    <a href="#" id="btnImprimirProposta" class="btn btn-success" target="_blank">Imprimir Proposta</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Alterar Status -->
+<div class="modal fade" id="statusModal" tabindex="-1" aria-labelledby="statusModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="statusModalLabel">Alterar Status da Proposta</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="propostaIdStatus">
+                <label for="novoStatus" class="form-label">Novo Status</label>
+                <select class="form-control" id="novoStatus">
+                    <option value="Habilitação">Habilitação</option>
+                    <option value="Adjudica">Adjudica</option>
+                    <option value="Perdida">Perdida</option>
+                    <option value="Anulada">Anulada</option>
+                    <option value="Prazo Vencido">Prazo Vencido</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                <button type="button" class="btn btn-primary" onclick="alterarStatus()">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Atualiza a URL do botão de impressão ao alterar a observação
+function atualizarLinkImpressao(propostaId) {
+    const inputObservacao = document.getElementById("observacaoProposta").value;
+    const btnImprimirProposta = document.getElementById("btnImprimirProposta");
+
+    if (btnImprimirProposta) {
+        btnImprimirProposta.href = `/precificaja/proposta_servico/${propostaId}/imprimir?obs=${encodeURIComponent(inputObservacao)}`;
+    }
+}
+
+// Função para buscar propostas na tabela
+function buscarProposta() {
+    const input = document.getElementById("campoBusca").value.toLowerCase();
+    const linhas = document.querySelectorAll("#tabelaPropostas tbody tr");
+
+    linhas.forEach((linha) => {
+        const textoLinha = linha.textContent.toLowerCase();
+        linha.style.display = textoLinha.includes(input) ? "" : "none";
+    });
+}
+
+// Função para excluir proposta
+async function excluirProposta(propostaId) {
+    if (!confirm("Tem certeza que deseja excluir esta proposta?")) return;
+
+    try {
+        const response = await fetch(`/precificaja/proposta_servico/${propostaId}/excluir`, { method: "DELETE" });
+        if (!response.ok) throw new Error("Erro ao excluir proposta.");
+
+        alert("Proposta excluída com sucesso.");
+        document.getElementById(`linha-${propostaId}`).remove();
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao excluir a proposta.");
+    }
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Subusuário{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="alert alert-info text-center">
+        <h4>Bem-vindo, {{ nome }}!</h4>
+        <p>Você está logado como subusuário e possui um acesso limitado ao sistema.</p>
+        <p>Abaixo, você pode assistir a um vídeo tutorial para entender melhor suas funções disponíveis.</p>
+    </div>
+
+    <!-- Seção do vídeo tutorial -->
+    <div class="text-center mt-4">
+        <h5>Assista ao vídeo tutorial:</h5>
+        <div class="ratio ratio-16x9">
+            <iframe
+                src="https://www.youtube.com/embed/artetUaZIWM?si=fuD3eM67P6PGwrOJ"
+                title="Tutorial Subusuário - PrecifiqueJá"
+                allowfullscreen>
+            </iframe>
+        </div>
+    </div>
+
+    <!-- Seção de instruções adicionais -->
+    <div class="mt-4 text-center">
+        <p>Se você tiver dúvidas ou precisar de suporte, entre em contato com o administrador do sistema.</p>
+    </div>
+</div>
+{% endblock %}
