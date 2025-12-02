@@ -575,6 +575,27 @@ Crie uma tabela COMPLETA com TODOS os itens do edital:
 - Sanções Previstas: [penalidades por inadimplência]
 - Observações Importantes: [qualquer informação relevante adicional]
 
+**PAINEL DE ALERTAS E VERIFICAÇÃO (use sinais modernos)**
+- Use ✅ para pontos regulares/conformes, ⚠️ para atenção e ❌ para restrições.
+- Checklist obrigatório com respostas curtas para:
+  1. Objeto (clareza, secretaria atendida, ambiguidade?)
+  2. Regime de execução e critério de julgamento (modo de disputa, registro de preço, garantias?)
+  3. Tipo de disputa (aberto/fechado, negociação, desempate?)
+  4. Participação (ME/EPP/MEI aceitos? consórcio? restrições?)
+  5. Regionalização (município, necessidade de base local, vantagem por proximidade?)
+  6. Documentos de habilitação (jurídica/fiscal/trabalhista/técnica/financeira e índices exigidos)
+  7. Qualificação técnica (atestados, conselhos de classe?)
+  8. Exequibilidade (planilha, DBI/BDI, margens mínimas?)
+  9. Anexos e documentos (TR, minuta, declarações, planilha modelo?)
+  10. Estratégia/ações prévias (garantia, amostra, simulação?)
+  11. Penalidades e riscos (multas, impedimentos, margens subjetivas?)
+  12. Recursos administrativos (prazos de impugnação/recurso e canais)
+
+**Padrão de entrega**
+- Linguagem direta e objetiva, mantendo TODAS as informações numéricas e textuais já pedidas nas seções anteriores.
+- Use tabelas sempre que possível e não remova campos que já estejam presentes no edital.
+- Se algo não estiver disponível, informe "[Não especificado no edital]".
+
 EDITAL:
 {texto_edital}
 
