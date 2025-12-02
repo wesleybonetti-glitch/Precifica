@@ -1173,7 +1173,7 @@ def consultar_cnpj():
         return jsonify({"error": "Erro inesperado ao consultar o CNPJ."}), 500
 
 
-@app.route('/precificaja/calculadora', methods=['GET'])
+@app.route('/calculadora', methods=['GET'])
 @login_required
 def calculadora():
     # Buscar o imposto_venda da empresa do usuário logado
@@ -1595,7 +1595,7 @@ import json
 # ===== ROTAS DE SESSÃO DA CALCULADORA =====
 
 
-@app.route('/precificaja/calculadora/sessao/salvar', methods=['POST'])
+@app.route('/calculadora/sessao/salvar', methods=['POST'])
 @login_required
 def salvar_sessao_calculadora():
     """
@@ -1664,7 +1664,7 @@ def salvar_sessao_calculadora():
         return jsonify({'error': 'Erro interno ao salvar a sessão.', 'details': str(e)}), 500
 
 
-@app.route('/precificaja/calculadora/sessao/carregar', methods=['GET'])
+@app.route('/calculadora/sessao/carregar', methods=['GET'])
 @login_required
 def carregar_sessao_calculadora():
     """
@@ -1764,7 +1764,7 @@ def limpar_sessao_calculadora_atual():
         return False
 
 
-@app.route('/precificaja/calculadora/sessao/verificar', methods=['GET'])
+@app.route('/calculadora/sessao/verificar', methods=['GET'])
 @login_required
 def verificar_sessao_calculadora():
     """
@@ -11869,14 +11869,15 @@ def converter_para_formato_antigo(resultado_json):
 
     return formato_antigo
 
-@app.route('/precificaja/leitor_edital', methods=['GET', 'POST'])
+
+@app.route('/leitor_edital', methods=['GET', 'POST'])
 @login_required
 def leitor_edital_route():
     """
-    Rota para análise de editais com IA (nova versão: JSON estruturado)
+    Rota para análise de editais com IA
+    MODIFICADO: Agora salva JSON na sessão para integração com calculadoras
     """
-    resultado_analise = None  # HTML simples (compatibilidade)
-    resumo_ia = None          # JSON estruturado para o template novo
+    resultado_analise = None
 
     if request.method == 'POST':
         if 'edital_pdf' not in request.files or not request.files['edital_pdf'].filename:
@@ -11887,50 +11888,46 @@ def leitor_edital_route():
 
         if file and '.' in file.filename and file.filename.rsplit('.', 1)[1].lower() == 'pdf':
             filename = secure_filename(file.filename)
+            # CÓDIGO ATUAL COM ERRO
             caminho_arquivo = os.path.join(app.config['EDITAL_UPLOAD_FOLDER'], filename)
             file.save(caminho_arquivo)
-
             try:
-                # Extrai texto do PDF
+                # Sistema de rotação automática - NÃO precisa configurar chave!
                 texto = leitor_edital.extrair_texto_de_pdf(caminho_arquivo)
 
                 if texto:
-                    # Chama a IA (nova versão: JSON direto)
+                    # MUDANÇA PRINCIPAL: Recebe HTML + JSON
                     resultado_html, resultado_json = leitor_edital.analisar_edital_com_ia(texto)
-
                     resultado_analise = resultado_html
-                    resumo_ia = resultado_json
 
-                    # Salva JSON na sessão para integração com calculadoras
+                    # Salva JSON na sessão para as calculadoras
                     if resultado_json:
                         session['edital_data'] = resultado_json
                         print(f"✅ Dados do edital salvos na sessão: {len(resultado_json.get('itens', []))} itens")
+
                 else:
                     flash('Não foi possível extrair texto do PDF.', 'danger')
+
+                # Remove arquivo temporário
+                os.remove(caminho_arquivo)
 
             except Exception as e:
                 flash(f'Ocorreu um erro no processamento: {e}', 'danger')
                 print(f"DEBUG: Erro completo na rota leitor_edital: {e}")
 
-            finally:
-                # Remove arquivo temporário se ainda existir
+                # Remove arquivo em caso de erro
                 if os.path.exists(caminho_arquivo):
                     os.remove(caminho_arquivo)
         else:
             flash('Arquivo inválido. Por favor, envie um PDF.', 'danger')
 
-    # IMPORTANTE: agora passamos também resumo_ia para o template
-    return render_template(
-        'leitor_edital.html',
-        resultado_analise=resultado_analise,
-        resumo_ia=resumo_ia
-    )
+    return render_template('leitor_edital.html', resultado_analise=resultado_analise)
 
 
 from flask import session, jsonify
 import json
 
-@app.route('/precificaja/leitor_edital/analisar', methods=['POST'])
+@app.route('/leitor_edital/analisar', methods=['POST'])
 def analisar_edital_route():
     # ... (lógica para receber o arquivo PDF) ...
     caminho_pdf = "..." # Caminho para o PDF salvo
@@ -11945,7 +11942,7 @@ def analisar_edital_route():
     return html_result
 
 
-@app.route('/precificaja/api/get_edital_data', methods=['GET'])
+@app.route('/api/get_edital_data', methods=['GET'])
 @login_required
 def get_edital_data():
     """

@@ -1,32 +1,37 @@
 """
-Leitor de Editais - Versão 2 (Pipeline Estruturado)
-- Rotação automática de chaves (via gerenciador_chaves_api)
-- Saída 100% em JSON estruturado para integração com calculadoras
-- Opcional: HTML simples para compatibilidade legada
+Leitor de Editais - Versão com Integração Completa
+- Rotação automática de chaves
+- Dupla saída: HTML + JSON
+- Integração com calculadoras
 """
 
-import fitz  # PyMuPDF para leitura de PDF
+import fitz
 import google.generativeai as genai
 import time
+import os
+import re
 import json
-import textwrap
-from typing import List, Dict, Any, Optional
-
+from google.api_core import exceptions as google_exceptions
 from gerenciador_chaves_api import obter_gerenciador
 
-# Cache simples para o modelo detectado
-_modelo_detectado: Optional[str] = None
+
+# Variável global para armazenar o modelo detectado
+_modelo_detectado = None
 
 
-# =============================================================================
-# 1. DETECÇÃO DE MODELO
-# =============================================================================
-def detectar_modelo_disponivel() -> str:
-    """Detecta automaticamente qual modelo Gemini está disponível na conta.
-
-    Usa a primeira chave disponível do gerenciador apenas para listar modelos.
-    O resultado fica em cache em _modelo_detectado.
+def configurar_ia(api_key=None):
     """
+    Configura a API do Google GenAI.
+    Agora usa sistema de rotação automática (ignora api_key fornecida).
+
+    Args:
+        api_key: Mantido para compatibilidade, mas não é usado
+    """
+    print("--- DEBUG: Sistema de rotação de chaves ativado. ---")
+
+
+def detectar_modelo_disponivel():
+    """Detecta automaticamente qual modelo Gemini está disponível."""
     global _modelo_detectado
 
     if _modelo_detectado:
@@ -34,57 +39,50 @@ def detectar_modelo_disponivel() -> str:
 
     print("🔍 Detectando modelos disponíveis...")
 
+    gerenciador = obter_gerenciador()
+    chave_temp = gerenciador.obter_chave_disponivel()
+    genai.configure(api_key=chave_temp)
+
     modelos_preferencia = [
-        "gemini-2.0-flash-exp",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-8b-exp-0827",
-        "gemini-1.5-flash-8b",
-        "gemini-1.5-pro",
-        "gemini-1.0-pro",
-        "gemini-pro",
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash',
+        'gemini-2.0-flash-exp',
+        'gemini-1.5-pro-latest',
+        'gemini-1.5-pro',
+        'gemini-pro',
     ]
 
     try:
-        gerenciador = obter_gerenciador()
-        chave_temp = gerenciador.obter_chave_disponivel()
-        genai.configure(api_key=chave_temp)
-
+        modelos_disponiveis = list(genai.list_models())
         modelos_compativeis = []
-        for m in genai.list_models():
-            try:
-                if "generateContent" in m.supported_generation_methods:
-                    nome = m.name.replace("models/", "")
-                    modelos_compativeis.append(nome)
-            except Exception:
-                # Alguns modelos podem não ter esse atributo preenchido corretamente
-                continue
 
-        # Tenta casar preferência com disponíveis
-        for preferido in modelos_preferencia:
-            for disponivel in modelos_compativeis:
-                if preferido in disponivel or disponivel in preferido:
-                    _modelo_detectado = disponivel
+        for modelo in modelos_disponiveis:
+            if 'generateContent' in modelo.supported_generation_methods:
+                nome_modelo = modelo.name.replace('models/', '')
+                modelos_compativeis.append(nome_modelo)
+
+        for modelo_preferido in modelos_preferencia:
+            for modelo_disponivel in modelos_compativeis:
+                if modelo_preferido in modelo_disponivel or modelo_disponivel in modelo_preferido:
+                    _modelo_detectado = modelo_disponivel
                     print(f"✅ Modelo selecionado: {_modelo_detectado}")
                     return _modelo_detectado
 
         if modelos_compativeis:
             _modelo_detectado = modelos_compativeis[0]
-        else:
-            _modelo_detectado = "gemini-pro"
+            return _modelo_detectado
+
+        _modelo_detectado = 'gemini-pro'
+        return _modelo_detectado
 
     except Exception as e:
         print(f"⚠️  Erro ao detectar modelos: {e}")
-        _modelo_detectado = "gemini-pro"
+        _modelo_detectado = 'gemini-pro'
+        return _modelo_detectado
 
-    return _modelo_detectado
 
-
-# =============================================================================
-# 2. LEITURA DE PDF
-# =============================================================================
-def extrair_texto_de_pdf(caminho_pdf: str) -> Optional[str]:
-    """Extrai todo o texto de um arquivo PDF usando PyMuPDF."""
+def extrair_texto_de_pdf(caminho_pdf):
+    """Extrai todo o texto de um arquivo PDF."""
     try:
         doc = fitz.open(caminho_pdf)
         texto_completo = ""
@@ -97,417 +95,540 @@ def extrair_texto_de_pdf(caminho_pdf: str) -> Optional[str]:
         return None
 
 
-# =============================================================================
-# 3. CHAMADA GENÉRICA COM ROTAÇÃO DE CHAVES
-# =============================================================================
-def _chamar_api_gemini(chave_api: str, prompt: str, nome_modelo: str, generation_config: dict) -> str:
-    """Função que realmente chama a API Gemini. É usada pelo gerenciador em rotação."""
+def chamar_api_com_rotacao(chave_api, prompt, nome_modelo, generation_config):
+    """
+    Função interna que faz a chamada à API.
+    Esta função é chamada pelo gerenciador com rotação automática.
+    """
     genai.configure(api_key=chave_api)
     model = genai.GenerativeModel(nome_modelo)
-    resp = model.generate_content(prompt, generation_config=generation_config)
-    if hasattr(resp, "text") and resp.text:
-        return resp.text
-    raise Exception("Resposta vazia da API Gemini")
+    response = model.generate_content(prompt, generation_config=generation_config)
+
+    if response and response.text:
+        return response.text
+    else:
+        raise Exception("Resposta vazia da API")
 
 
-def _forcar_json(texto: str) -> dict:
-    """Tenta converter a resposta da IA em JSON.
-
-    - Primeiro tenta json.loads direto;
-    - Se falhar, tenta extrair o trecho entre o primeiro '{' e o último '}'.
-    - Em caso de falha, retorna {}.
+def formatar_resultado_json(texto_analise):
     """
-    if not texto:
-        return {}
+    NOVA FUNÇÃO: Converte o resultado da análise em JSON estruturado.
+    Este JSON será usado pelas calculadoras para preenchimento automático.
 
-    texto = texto.strip()
-    try:
-        return json.loads(texto)
-    except Exception:
-        pass
-
-    ini = texto.find("{")
-    fim = texto.rfind("}")
-    if ini != -1 and fim != -1 and fim > ini:
-        trecho = texto[ini : fim + 1]
-        try:
-            return json.loads(trecho)
-        except Exception:
-            pass
-
-    print("⚠️  Não foi possível converter a resposta em JSON. Retornando estrutura vazia.")
-    return {}
-
-
-# =============================================================================
-# 4. EXTRAÇÃO DE BLOCO DE ITENS / LOTES
-# =============================================================================
-def extrair_bloco_itens(texto: str) -> str:
-    """Tenta localizar o bloco de itens/lotes no texto do edital.
-
-    Procura marcadores típicos como:
-    - 'ANEXO I', 'ANEXO II'
-    - 'TERMO DE REFERÊNCIA'
-    - 'PLANILHA DE ITENS'
-    - 'ESPECIFICAÇÃO DOS ITENS'
-
-    Se não encontrar nada, devolve o texto completo (melhor isso do que nada).
+    Returns:
+        dict: Dicionário com estrutura:
+        {
+            'informacoes_gerais': {
+                'razao_social': str,
+                'cnpj': str,
+                'endereco': str,
+                'numero_processo': str,
+                'validade_proposta': int,
+                'prazo_pagamento': int,
+                'prazo_entrega': int,
+                'objeto': str,
+                'modalidade': str,
+                'tipo': str,
+                'valor_total': str,
+                'data_abertura': str
+            },
+            'itens': [
+                {
+                    'item': str,
+                    'descricao': str,
+                    'quantidade': str,
+                    'unidade': str,
+                    'valor_unitario': str,
+                    'valor_total': str
+                }
+            ]
+        }
     """
-    marcadores_inicio = [
-        "ANEXO I",
-        "ANEXO II",
-        "TERMO DE REFERÊNCIA",
-        "TERMO DE REFERENCIA",
-        "PLANILHA DE ITENS",
-        "PLANILHA DE PREÇOS",
-        "ESPECIFICAÇÃO DOS ITENS",
-        "ESPECIFICACAO DOS ITENS",
-        "ESPECIFICAÇÕES DOS SERVIÇOS",
-        "ESPECIFICACOES DOS SERVICOS",
-    ]
+    if not texto_analise:
+        return {'informacoes_gerais': {}, 'itens': []}
 
-    upper = texto.upper()
-    idx_inicio = None
-
-    for m in marcadores_inicio:
-        pos = upper.find(m)
-        if pos != -1:
-            if idx_inicio is None or pos < idx_inicio:
-                idx_inicio = pos
-
-    if idx_inicio is None:
-        # Não encontrou marcador claro de itens: devolve tudo
-        return texto
-
-    return texto[idx_inicio:]
-
-
-def _chunk_text(texto: str, max_chars: int = 15000) -> List[str]:
-    """Divide o texto em pedaços menores para evitar estouro de contexto da IA."""
-    return [texto[i : i + max_chars] for i in range(0, len(texto), max_chars)]
-
-
-# =============================================================================
-# 5. ANÁLISE GERAL DO EDITAL (OBJETO, PRAZOS, HABILITAÇÃO, RISCOS)
-# =============================================================================
-def analisar_edital_geral_json(texto_edital: str) -> dict:
-    """Analisa o edital inteiro e devolve um JSON com as seções gerais (sem itens)."""
-    if not texto_edital:
-        return {}
-
-    gerenciador = obter_gerenciador()
-    nome_modelo = detectar_modelo_disponivel()
-    print(f"🤖 Usando modelo para análise geral: {nome_modelo}")
-    print(f"--- DEBUG: Edital com {len(texto_edital)} caracteres. Processamento em modo JSON (seções gerais). ---")
-
-    generation_config = {
-        "temperature": 0.3,
-        "top_p": 0.95,
-        "top_k": 32,
-        "max_output_tokens": 4096,
+    resultado = {
+        'informacoes_gerais': {},
+        'itens': []
     }
 
-    template = """
-Você é um analista de licitações especialista na Lei 14.133/2021.
+    linhas = texto_analise.split('\n')
 
-Leia com atenção o edital abaixo (texto integral) e devolva EXCLUSIVAMENTE um JSON
-no formato a seguir (sem texto explicativo, sem comentários, sem markdown):
-
-{{
-  "informacoes_gerais": {{
-    "razao_social": string ou null,
-    "cnpj": string ou null,
-    "endereco": string ou null,
-    "numero_processo": string ou null,
-    "objeto": string ou null,
-    "modalidade": string ou null,
-    "tipo": string ou null,
-    "data_abertura": string ou null,
-    "validade_proposta": integer ou null,
-    "prazo_entrega": integer ou null,
-    "prazo_pagamento": integer ou null,
-    "valor_total": string ou null
-  }},
-  "prazos": {{
-    "data_abertura": string ou null,
-    "hora_abertura": string ou null,
-    "local_sessao": string ou null,
-    "validade_proposta_dias": integer ou null,
-    "prazo_entrega_dias": integer ou null,
-    "prazo_pagamento_dias": integer ou null,
-    "endereco_entrega": string ou null
-  }},
-  "habilitacao": {{
-    "juridica": string ou null,
-    "regularidade_fiscal_trabalhista": string ou null,
-    "qualificacao_economico_financeira": string ou null,
-    "qualificacao_tecnica": string ou null,
-    "outros": string ou null
-  }},
-  "exigencias_tecnicas": string ou null,
-  "riscos_observacoes": string ou null
-}}
-
-REGRAS IMPORTANTES:
-- Preencha tudo diretamente a partir do texto do edital.
-- Se não encontrar a informação, use null (não invente).
-- "exigencias_tecnicas" deve resumir as exigências técnicas do objeto/licitação.
-- "riscos_observacoes" deve destacar penalidades, multas, garantias, riscos e pegadinhas.
-- NÃO use markdown, NÃO use texto fora do JSON.
-
-EDITAL (TEXTO COMPLETO):
-<<<INICIO_DO_EDITAL>>>
-{conteudo}
-<<<FIM_DO_EDITAL>>>
-    """
-
-    prompt = template.format(conteudo=texto_edital)
-
-    inicio = time.time()
-    resultado_bruto = gerenciador.executar_com_rotacao(
-        _chamar_api_gemini,
-        prompt,
-        nome_modelo,
-        generation_config,
-    )
-    tempo = time.time() - inicio
-    print(f"✅ Análise geral concluída em {tempo:.1f} segundos!")
-
-    dados = _forcar_json(resultado_bruto)
-    dados_normalizados = _normalizar_estrutura_geral(dados)
-    return dados_normalizados
-
-
-def _normalizar_estrutura_geral(dados: dict) -> dict:
-    """Garante que todas as chaves esperadas existam, com None como default."""
-    base = {
-        "informacoes_gerais": {
-            "razao_social": None,
-            "cnpj": None,
-            "endereco": None,
-            "numero_processo": None,
-            "objeto": None,
-            "modalidade": None,
-            "tipo": None,
-            "data_abertura": None,
-            "validade_proposta": None,
-            "prazo_entrega": None,
-            "prazo_pagamento": None,
-            "valor_total": None,
-        },
-        "prazos": {
-            "data_abertura": None,
-            "hora_abertura": None,
-            "local_sessao": None,
-            "validade_proposta_dias": None,
-            "prazo_entrega_dias": None,
-            "prazo_pagamento_dias": None,
-            "endereco_entrega": None,
-        },
-        "habilitacao": {
-            "juridica": None,
-            "regularidade_fiscal_trabalhista": None,
-            "qualificacao_economico_financeira": None,
-            "qualificacao_tecnica": None,
-            "outros": None,
-        },
-        "exigencias_tecnicas": None,
-        "riscos_observacoes": None,
-        "itens": [],
-    }
-
-    if not isinstance(dados, dict):
-        return base
-
-    for chave in ["informacoes_gerais", "prazos", "habilitacao"]:
-        if chave not in dados or not isinstance(dados[chave], dict):
-            dados[chave] = {}
-
-    # Atualiza campos conhecidos, mantendo None como fallback
-    for campo in base["informacoes_gerais"]:
-        base["informacoes_gerais"][campo] = dados.get("informacoes_gerais", {}).get(campo)
-
-    for campo in base["prazos"]:
-        base["prazos"][campo] = dados.get("prazos", {}).get(campo)
-
-    for campo in base["habilitacao"]:
-        base["habilitacao"][campo] = dados.get("habilitacao", {}).get(campo)
-
-    base["exigencias_tecnicas"] = dados.get("exigencias_tecnicas")
-    base["riscos_observacoes"] = dados.get("riscos_observacoes")
-
-    # Se já vierem itens (em alguma versão anterior), preserva
-    if isinstance(dados.get("itens"), list):
-        base["itens"] = dados["itens"]
-
-    return base
-
-
-# =============================================================================
-# 6. EXTRAÇÃO DE ITENS / LOTES EM CHUNKS
-# =============================================================================
-def analisar_itens_em_chunks(texto_itens: str) -> List[Dict[str, Any]]:
-    """Analisa o bloco de itens em pedaços e retorna lista consolidada de itens."""
-    if not texto_itens:
-        return []
-
-    gerenciador = obter_gerenciador()
-    nome_modelo = detectar_modelo_disponivel()
-    print(f"🤖 Usando modelo para itens: {nome_modelo}")
-
-    generation_config = {
-        "temperature": 0.2,
-        "top_p": 0.9,
-        "top_k": 32,
-        "max_output_tokens": 4096,
-    }
-
-    template = """
-Você está lendo um trecho de um edital que contém especificações de itens e/ou lotes.
-
-Sua tarefa é extrair TODOS os itens que aparecerem neste trecho e devolver
-EXCLUSIVAMENTE um JSON no formato:
-
-{{
-  "itens": [
-    {{
-      "item": "número do item ou lote, como está no edital (ex: '1', '2', '1.1', 'Lote 01')",
-      "descricao": "descrição COMPLETA do item exatamente como está no edital, sem resumir para 'MATERIAL/SERVIÇO'",
-      "quantidade": "quantidade, como string (ex: '10', '5.000', '1,5') ou null se não constar",
-      "unidade": "unidade de medida (UN, M², CX, PCT, etc.) ou null se não constar claramente",
-      "valor_unitario": "valor unitário estimado como string (ex: 'R$ 10,50') ou null se não constar",
-      "valor_total": "valor total estimado como string (ex: 'R$ 1.050,00') ou null se não constar"
-    }}
-  ]
-}}
-
-REGRAS IMPORTANTES:
-- NÃO resuma a descrição para algo genérico como 'ITEM MATERIAL/SERVIÇO'.
-  Use sempre o texto mais completo disponível no trecho.
-- Se um item não tiver quantidade ou valores, use null nesses campos.
-- Não invente valores que não estejam no trecho.
-- Devolva apenas o JSON, sem comentários, sem markdown.
-
-TRECHO DO EDITAL:
-<<<INICIO_DO_TRECHO>>>
-{trecho}
-<<<FIM_DO_TRECHO>>>
-    """
-
-    todos_itens: List[Dict[str, Any]] = []
-
-    for pedaco in _chunk_text(texto_itens, max_chars=15000):
-        if not pedaco.strip():
+    # Extrai informações gerais
+    for linha in linhas:
+        linha = linha.strip()
+        if not linha or '|' in linha:
             continue
 
-        prompt = template.format(trecho=pedaco)
+        # Remove formatação markdown
+        linha = linha.replace('**', '').replace('*', '')
 
-        inicio = time.time()
-        resultado_bruto = gerenciador.executar_com_rotacao(
-            _chamar_api_gemini,
-            prompt,
-            nome_modelo,
-            generation_config,
-        )
-        tempo = time.time() - inicio
-        print(f"✅ Chunk de itens processado em {tempo:.1f} segundos!")
+        if ':' in linha:
+            partes = linha.split(':', 1)
+            if len(partes) == 2:
+                campo = partes[0].strip().lower()
+                valor = partes[1].strip()
 
-        dados = _forcar_json(resultado_bruto)
-        itens_parciais = []
+                # Mapeia campos para chaves do JSON
+                if 'razão social' in campo or 'razao social' in campo:
+                    resultado['informacoes_gerais']['razao_social'] = valor
 
-        if isinstance(dados, dict):
-            itens_parciais = dados.get("itens") or []
-        elif isinstance(dados, list):
-            itens_parciais = dados
+                elif 'cnpj' in campo:
+                    # Remove formatação do CNPJ
+                    cnpj_limpo = re.sub(r'[^\d]', '', valor)
+                    resultado['informacoes_gerais']['cnpj'] = cnpj_limpo
 
-        for it in itens_parciais:
-            if not isinstance(it, dict):
+                elif 'endereço' in campo or 'endereco' in campo:
+                    resultado['informacoes_gerais']['endereco'] = valor
+
+                elif 'número do processo' in campo or 'numero do processo' in campo or 'processo' in campo:
+                    resultado['informacoes_gerais']['numero_processo'] = valor
+
+                elif 'validade da proposta' in campo or 'validade' in campo:
+                    # Extrai apenas números
+                    dias = re.findall(r'\d+', valor)
+                    if dias:
+                        resultado['informacoes_gerais']['validade_proposta'] = int(dias[0])
+
+                elif 'prazo de pagamento' in campo or 'pagamento' in campo:
+                    dias = re.findall(r'\d+', valor)
+                    if dias:
+                        resultado['informacoes_gerais']['prazo_pagamento'] = int(dias[0])
+
+                elif 'prazo de entrega' in campo or 'entrega' in campo:
+                    dias = re.findall(r'\d+', valor)
+                    if dias:
+                        resultado['informacoes_gerais']['prazo_entrega'] = int(dias[0])
+
+                elif 'objeto' in campo and 'licitação' in campo:
+                    resultado['informacoes_gerais']['objeto'] = valor
+
+                elif 'modalidade' in campo:
+                    resultado['informacoes_gerais']['modalidade'] = valor
+
+                elif 'tipo' in campo:
+                    resultado['informacoes_gerais']['tipo'] = valor
+
+                elif 'valor total' in campo or 'valor estimado' in campo:
+                    resultado['informacoes_gerais']['valor_total'] = valor
+
+                elif 'data de abertura' in campo or 'abertura' in campo:
+                    resultado['informacoes_gerais']['data_abertura'] = valor
+
+    # Extrai itens da tabela
+    em_tabela_itens = False
+    for linha in linhas:
+        linha = linha.strip()
+
+        # Detecta início da seção de itens
+        if 'PARTE 3' in linha.upper() or 'TABELA' in linha.upper() and 'ITENS' in linha.upper():
+            em_tabela_itens = True
+            continue
+
+        # Detecta fim da seção de itens
+        if em_tabela_itens and 'PARTE 4' in linha.upper():
+            break
+
+        # Processa linhas da tabela
+        if em_tabela_itens and '|' in linha:
+            # Pula cabeçalhos e separadores
+            if 'Item' in linha or '---' in linha or '===' in linha:
                 continue
-            item_norm = {
-                "item": (str(it.get("item")).strip() or None) if it.get("item") is not None else None,
-                "descricao": (str(it.get("descricao") or "")).strip(),
-                "quantidade": (str(it.get("quantidade")).strip() or None) if it.get("quantidade") is not None else None,
-                "unidade": (str(it.get("unidade")).strip() or None) if it.get("unidade") is not None else None,
-                "valor_unitario": (str(it.get("valor_unitario")).strip() or None) if it.get("valor_unitario") is not None else None,
-                "valor_total": (str(it.get("valor_total")).strip() or None) if it.get("valor_total") is not None else None,
-            }
-            # ignora itens sem descrição
-            if item_norm["descricao"]:
-                todos_itens.append(item_norm)
 
-    print(f"📦 Total de itens extraídos pela IA: {len(todos_itens)}")
-    return todos_itens
+            # Divide por pipe e limpa
+            colunas = [col.strip() for col in linha.split('|')]
+            colunas = [col for col in colunas if col]
+
+            # Precisa ter pelo menos 3 colunas (item, descrição, quantidade)
+            if len(colunas) >= 3:
+                item = {
+                    'item': colunas[0] if len(colunas) > 0 else '',
+                    'descricao': colunas[1] if len(colunas) > 1 else '',
+                    'quantidade': colunas[2] if len(colunas) > 2 else '',
+                    'unidade': colunas[3] if len(colunas) > 3 else '',
+                    'valor_unitario': colunas[4] if len(colunas) > 4 else '',
+                    'valor_total': colunas[5] if len(colunas) > 5 else ''
+                }
+
+                # Só adiciona se tiver descrição
+                if item['descricao'] and item['descricao'] != '-':
+                    resultado['itens'].append(item)
+
+    return resultado
 
 
-# =============================================================================
-# 7. PIPELINE COMPLETO PARA O EDITAL
-# =============================================================================
-def processar_edital(texto_edital: str) -> dict:
-    """Pipeline completo:
+def formatar_resultado_html(texto_analise):
+    """
+    Converte o resultado da análise em HTML formatado e profissional.
+    """
+    if not texto_analise:
+        return "<p>Nenhum resultado disponível.</p>"
 
-    1. Analisa o edital inteiro para informações gerais, prazos, habilitação e riscos.
-    2. Extrai o bloco de itens / termo de referência.
-    3. Analisa esse bloco em chunks para extrair itens/lotes.
-    4. Devolve um ÚNICO dicionário JSON consolidado, pronto para uso no template
-       leitor_edital.html e para integração com as calculadoras.
+    html = ""
+
+    # Divide o texto em seções
+    secoes = {
+        'informacoes_gerais': [],
+        'habilitacao': [],
+        'itens': []
+    }
+
+    linhas = texto_analise.split('\n')
+    secao_atual = None
+
+    for linha in linhas:
+        linha = linha.strip()
+        if not linha:
+            continue
+
+        # Identifica seções
+        linha_upper = linha.upper()
+        if 'INFORMAÇÕES GERAIS' in linha_upper or 'INFORMACOES GERAIS' in linha_upper or 'PARTE 1' in linha_upper:
+            secao_atual = 'informacoes_gerais'
+            continue
+        elif 'HABILITAÇÃO' in linha_upper or 'HABILITACAO' in linha_upper or 'REQUISITOS' in linha_upper or 'PARTE 2' in linha_upper:
+            secao_atual = 'habilitacao'
+            continue
+        elif 'ITENS' in linha_upper or 'SERVIÇOS' in linha_upper or 'SERVICOS' in linha_upper or 'TABELA' in linha_upper or 'PARTE 3' in linha_upper:
+            secao_atual = 'itens'
+            continue
+
+        # Adiciona linha à seção atual
+        if secao_atual:
+            secoes[secao_atual].append(linha)
+
+    # SEÇÃO 1: INFORMAÇÕES GERAIS
+    if secoes['informacoes_gerais']:
+        html += '''
+        <div class="secao-espacamento resultado-container">
+            <h4 class="secao-titulo">
+                <i class="fas fa-info-circle"></i>
+                Informações Gerais do Edital
+            </h4>
+            <div class="secao-conteudo">
+                <table class="info-table table table-hover">
+                    <tbody>
+        '''
+
+        for linha in secoes['informacoes_gerais']:
+            if ':' in linha or '|' in linha:
+                linha = linha.replace('**', '').replace('*', '')
+
+                if ':' in linha:
+                    partes = linha.split(':', 1)
+                elif '|' in linha:
+                    partes = linha.split('|', 1)
+                else:
+                    continue
+
+                if len(partes) == 2:
+                    campo = partes[0].strip().replace('-', '').strip()
+                    valor = partes[1].strip()
+
+                    if not valor or valor == '-':
+                        continue
+
+                    if 'Razão Social' in campo and 'CNPJ' in campo:
+                        continue
+
+                    if 'R$' in valor or 'Valor' in campo or 'valor' in campo:
+                        valor = f'<span class="valor-destaque">{valor}</span>'
+
+                    html += f'''
+                        <tr>
+                            <th>{campo}</th>
+                            <td>{valor}</td>
+                        </tr>
+                    '''
+
+        html += '''
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        '''
+
+    # SEÇÃO 2: REQUISITOS DE HABILITAÇÃO
+    if secoes['habilitacao']:
+        html += '''
+        <div class="secao-espacamento resultado-container">
+            <h4 class="secao-titulo">
+                <i class="fas fa-clipboard-check"></i>
+                Requisitos de Habilitação
+            </h4>
+            <div class="secao-conteudo">
+                <ul class="lista-requisitos">
+        '''
+
+        requisito_atual = None
+        descricao_atual = []
+
+        for linha in secoes['habilitacao']:
+            linha = linha.replace('**', '').replace('*', '').strip()
+
+            if ':' in linha and not linha.startswith('-'):
+                if requisito_atual:
+                    desc = ' '.join(descricao_atual)
+                    if desc:
+                        html += f'''
+                        <li>
+                            <strong>{requisito_atual}</strong>
+                            {desc}
+                        </li>
+                        '''
+
+                partes = linha.split(':', 1)
+                requisito_atual = partes[0].strip()
+                descricao_atual = [partes[1].strip()] if len(partes) > 1 and partes[1].strip() else []
+            else:
+                if requisito_atual and linha and linha != '-':
+                    descricao_atual.append(linha)
+
+        if requisito_atual:
+            desc = ' '.join(descricao_atual)
+            if desc:
+                html += f'''
+                <li>
+                    <strong>{requisito_atual}</strong>
+                    {desc}
+                </li>
+                '''
+
+        html += '''
+                </ul>
+            </div>
+        </div>
+        '''
+
+    # SEÇÃO 3: TABELA DE ITENS/SERVIÇOS
+    if secoes['itens']:
+        html += '''
+        <div class="secao-espacamento resultado-container">
+            <h4 class="secao-titulo">
+                <i class="fas fa-list-alt"></i>
+                Itens / Serviços Licitados
+            </h4>
+            <div class="secao-conteudo">
+                <div class="table-responsive">
+                    <table class="tabela-itens">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Descrição</th>
+                                <th>Qtd.</th>
+                                <th>Unidade</th>
+                                <th>Vlr. Unit.</th>
+                                <th>Vlr. Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        '''
+
+        for linha in secoes['itens']:
+            if '|' in linha:
+                if 'Item' in linha or '---' in linha or '===' in linha:
+                    continue
+
+                colunas = [col.strip() for col in linha.split('|')]
+                colunas = [col for col in colunas if col]
+
+                if len(colunas) >= 3:
+                    html += '<tr>'
+                    for i, col in enumerate(colunas):
+                        if i < 6:
+                            html += f'<td>{col}</td>'
+                    while len(colunas) < 6:
+                        html += '<td>-</td>'
+                        colunas.append('-')
+                    html += '</tr>'
+
+        html += '''
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        '''
+
+    if not any(secoes.values()):
+        html = f'''
+        <div class="resultado-container">
+            <div class="secao-conteudo">
+                <pre style="white-space: pre-wrap; font-family: inherit; font-size: 0.95rem; line-height: 1.6;">{texto_analise}</pre>
+            </div>
+        </div>
+        '''
+
+    return html
+
+
+def analisar_edital_com_ia(texto_edital):
+    """
+    VERSÃO COM INTEGRAÇÃO COMPLETA:
+    - Rotação automática de chaves
+    - Dupla saída: HTML + JSON
+    - Integração com calculadoras
+
+    Returns:
+        tuple: (resultado_html, resultado_json)
     """
     if not texto_edital:
-        return _normalizar_estrutura_geral({})
-
-    # 1) Análise geral
-    geral = analisar_edital_geral_json(texto_edital)
-
-    # 2) Bloco de itens
-    bloco_itens = extrair_bloco_itens(texto_edital)
-
-    # 3) Itens em chunks
-    itens = analisar_itens_em_chunks(bloco_itens)
-
-    geral["itens"] = itens
-    return geral
-
-
-# =============================================================================
-# 8. FUNÇÃO COMPATÍVEL COM A VERSÃO ANTIGA (HTML + JSON)
-# =============================================================================
-def analisar_edital_com_ia(texto_edital: str):
-    """Função de compatibilidade com a versão antiga.
-
-    Agora ela usa o novo pipeline (processar_edital) e gera:
-    - resultado_html: um HTML simples com um resumo básico;
-    - resultado_json: o JSON completo usado pelas calculadoras e pelo novo template.
-
-    Isso mantém compatibilidade com qualquer código que ainda espere (html, json).
-    """
-    if not texto_edital:
-        return "<p class='text-danger'>Nenhum texto de edital recebido.</p>", None
+        return None, None
 
     try:
-        resumo = processar_edital(texto_edital)
+        gerenciador = obter_gerenciador()
+        nome_modelo = detectar_modelo_disponivel()
+        print(f"🤖 Usando modelo: {nome_modelo}")
 
-        # HTML bem simples apenas para fallback/depuração
-        info = resumo.get("informacoes_gerais", {}) or {}
-        orgao = info.get("razao_social") or "Não identificado"
-        objeto = info.get("objeto") or "Não identificado"
-        modalidade = info.get("modalidade") or "Não identificado"
-        tipo = info.get("tipo") or "Não identificado"
-        data_abertura = info.get("data_abertura") or "Não identificado"
+        MAX_CARACTERES = 600000
+        if len(texto_edital) > MAX_CARACTERES:
+            print(f"⚠️  Edital muito grande ({len(texto_edital)} caracteres). Usando primeiros {MAX_CARACTERES} caracteres.")
+            texto_edital = texto_edital[:MAX_CARACTERES]
 
-        html = f"""
-        <div class="resultado-container">
-            <h4>Resumo automático do edital (gerado por IA)</h4>
-            <p><strong>Órgão / Razão social:</strong> {orgao}</p>
-            <p><strong>Objeto:</strong> {objeto}</p>
-            <p><strong>Modalidade:</strong> {modalidade}</p>
-            <p><strong>Tipo de julgamento:</strong> {tipo}</p>
-            <p><strong>Data de abertura:</strong> {data_abertura}</p>
-            <p><em>Para ver a análise completa, utilize a nova página do Leitor de Editais.</em></p>
-        </div>
-        """
+        print(f"--- DEBUG: Edital com {len(texto_edital)} caracteres. Processamento com dupla saída (HTML + JSON). ---")
 
-        print(f"✅ JSON contém {len(resumo.get('itens', []))} itens")
-        return html, resumo
+        # Prompt otimizado para extrair dados estruturados
+        prompt_completo = f"""
+Analise este edital de licitação e extraia TODAS as informações relevantes de forma COMPLETA e DETALHADA.
+
+**PARTE 1: INFORMAÇÕES GERAIS DO EDITAL**
+Extraia TODAS as informações abaixo (se disponíveis no edital):
+
+**Órgão Licitante:**
+- Razão Social: [nome completo do órgão]
+- CNPJ: [número completo]
+- Endereço Completo: [rua, número, bairro, cidade, estado, CEP]
+- Telefone: [se disponível]
+- Email: [se disponível]
+- Site: [se disponível]
+
+**Dados da Licitação:**
+- Número do Processo/Edital: [número completo]
+- Modalidade: [Pregão Eletrônico, Concorrência, etc.]
+- Tipo: [Menor Preço, Técnica e Preço, etc.]
+- Regime de Execução: [Empreitada por preço global, unitário, etc.]
+- Objeto da Licitação: [descrição COMPLETA do objeto]
+- Justificativa: [se disponível]
+
+**Datas e Prazos:**
+- Data de Abertura: [data e hora completas]
+- Data Limite para Impugnação: [se disponível]
+- Data Limite para Esclarecimentos: [se disponível]
+- Validade da Proposta: [número de dias]
+- Prazo de Entrega: [número de dias e condições]
+- Prazo de Execução: [se aplicável]
+- Vigência do Contrato: [período]
+
+**Valores:**
+- Valor Total Estimado: [valor completo com R$]
+- Valor Mínimo: [se houver]
+- Valor Máximo: [se houver]
+- Dotação Orçamentária: [se disponível]
+
+**Condições de Pagamento:**
+- Forma de Pagamento: [descrição completa]
+- Prazo de Pagamento: [número de dias e condições]
+- Reajuste: [se previsto e condições]
+
+**Garantias:**
+- Garantia de Proposta: [se exigida, percentual e forma]
+- Garantia de Execução: [se exigida, percentual e forma]
+
+**Critérios de Julgamento:**
+- Critério Principal: [menor preço, técnica e preço, etc.]
+- Critérios de Desempate: [se houver]
+- Preferências: [ME/EPP, produtos nacionais, etc.]
+
+**PARTE 2: REQUISITOS DE HABILITAÇÃO**
+Liste TODOS os documentos e requisitos exigidos, organizados por categoria:
+
+**Habilitação Jurídica:**
+[Liste TODOS os documentos exigidos com detalhes]
+
+**Regularidade Fiscal e Trabalhista:**
+[Liste TODAS as certidões e documentos exigidos]
+
+**Qualificação Econômico-Financeira:**
+[Liste TODOS os requisitos e documentos]
+
+**Qualificação Técnica:**
+[Liste TODOS os atestados, certidões e comprovações exigidas]
+
+**Declarações Obrigatórias:**
+[Liste TODAS as declarações que devem ser apresentadas]
+
+**Outros Documentos:**
+[Qualquer outro documento exigido]
+
+**PARTE 3: TABELA COMPLETA DE ITENS/SERVIÇOS**
+Crie uma tabela COMPLETA com TODOS os itens do edital:
+
+| Item | Descrição Completa | Qtd | Unidade | Vlr Unit Estimado | Vlr Total Estimado |
+|------|-------------------|-----|---------|-------------------|-------------------|
+| 1    | [descrição detalhada] | [qtd] | [un] | [R$ valor] | [R$ valor] |
+| 2    | [descrição detalhada] | [qtd] | [un] | [R$ valor] | [R$ valor] |
+[Continue para TODOS os itens]
+
+**PARTE 4: INFORMAÇÕES COMPLEMENTARES**
+- Anexos do Edital: [liste todos os anexos]
+- Legislação Aplicável: [leis e normas citadas]
+- Sanções Previstas: [penalidades por inadimplência]
+- Observações Importantes: [qualquer informação relevante adicional]
+
+EDITAL:
+{texto_edital}
+
+IMPORTANTE: 
+- Seja COMPLETO e DETALHADO
+- Não omita informações importantes
+- Se alguma informação não estiver disponível, indique "[Não especificado no edital]"
+- Mantenha a formatação clara e organizada
+- Use SEMPRE o formato de tabela com pipes (|) para os itens
+"""
+
+        generation_config = {
+            'temperature': 0.2,
+            'top_p': 0.8,
+            'top_k': 20,
+            'max_output_tokens': 8192,
+        }
+
+        print("⚡ Processando com rotação automática de chaves...")
+        print("📋 Extraindo informações COMPLETAS do edital...")
+        inicio = time.time()
+
+        # Executa com rotação automática de chaves
+        resultado = gerenciador.executar_com_rotacao(
+            chamar_api_com_rotacao,
+            prompt_completo,
+            nome_modelo,
+            generation_config
+        )
+
+        tempo_decorrido = time.time() - inicio
+        print(f"✅ Processamento concluído em {tempo_decorrido:.1f} segundos!")
+
+        # Imprime estatísticas de uso
+        print("\n📊 Estatísticas de uso das chaves:")
+        stats = gerenciador.obter_estatisticas()
+        print(f"   Chaves disponíveis: {stats['chaves_disponiveis']}/{stats['total_chaves']}")
+        print(f"   Total de requisições: {stats['total_requisicoes']}")
+
+        if resultado:
+            # Formata em HTML para visualização
+            resultado_html = formatar_resultado_html(resultado)
+
+            # Formata em JSON para integração com calculadoras
+            resultado_json = formatar_resultado_json(resultado)
+
+            print("✅ Dupla saída gerada: HTML + JSON")
+            print(f"   JSON contém {len(resultado_json.get('itens', []))} itens")
+
+            return resultado_html, resultado_json
+        else:
+            return "<p class='text-danger'>Erro: Resposta vazia da API. Tente novamente.</p>", None
 
     except Exception as e:
-        print(f"❌ Erro no pipeline de análise do edital: {e}")
+        print(f"❌ Erro ao chamar a API de IA: {e}")
         return f"<p class='text-danger'>Ocorreu um erro ao analisar o documento: {e}</p>", None
+

@@ -1,15 +1,15 @@
 {
   "AIzaSyBiVe": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 3,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:33.106228",
+    "tentativas": 497,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyCnCl": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 3,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:35.632866",
+    "tentativas": 481,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
@@ -17,251 +17,251 @@
     "bloqueada": false,
     "bloqueada_em": null,
     "tentativas": 0,
-    "ultimo_uso": "2025-11-21T10:04:05.129391",
-    "total_requisicoes": 3
+    "ultimo_uso": "2025-12-02T11:49:59.018063",
+    "total_requisicoes": 575
   },
   "AIzaSyDB8L": {
-    "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:32.856258",
-    "tentativas": 3,
+    "bloqueada": false,
+    "bloqueada_em": null,
+    "tentativas": 372,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyASPa": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:35.609876",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:06.110733",
+    "tentativas": 432,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBf0r": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:38.366747",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:08.665488",
+    "tentativas": 436,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBM_g": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:41.105598",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:11.198932",
+    "tentativas": 438,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBDiE": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:43.862219",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:13.732812",
+    "tentativas": 436,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyCzE0": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:46.624129",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:16.301804",
+    "tentativas": 438,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyC2Gw": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:49.385187",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:18.841982",
+    "tentativas": 435,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyAvWK": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:52.135086",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:21.468284",
+    "tentativas": 432,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyCaOC": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:54.873342",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:24.012698",
+    "tentativas": 431,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyA6lM": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:05:57.615751",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:26.543002",
+    "tentativas": 436,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyCcaT": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:00.367569",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:29.088871",
+    "tentativas": 431,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBrCX": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:03.214357",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:31.626161",
+    "tentativas": 426,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyAi7S": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:05.969381",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:34.156189",
+    "tentativas": 432,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyAL-Z": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:08.722213",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:36.687228",
+    "tentativas": 428,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyB5_c": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:11.470107",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:39.233095",
+    "tentativas": 427,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyC2Lm": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:14.226839",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:41.781082",
+    "tentativas": 431,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyCjO0": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:16.984661",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:44.311021",
+    "tentativas": 427,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyA3zW": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:19.732294",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:46.846733",
+    "tentativas": 434,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBI-f": {
     "bloqueada": true,
-    "bloqueada_em": "2025-11-21T10:06:22.469371",
-    "tentativas": 3,
+    "bloqueada_em": "2025-12-02T11:48:49.400407",
+    "tentativas": 425,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBtMl": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:48:51.952713",
+    "tentativas": 431,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBq8q": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:48:54.483088",
+    "tentativas": 424,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBhWd": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:48:57.043775",
+    "tentativas": 431,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyCUG_": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:48:59.570831",
+    "tentativas": 422,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyB-LZ": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:02.230637",
+    "tentativas": 434,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyDTmG": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:04.780694",
+    "tentativas": 419,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBM1W": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:07.525288",
+    "tentativas": 437,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyCcUi": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:10.063368",
+    "tentativas": 422,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyCgcV": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:12.593129",
+    "tentativas": 435,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBWao": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:15.147077",
+    "tentativas": 422,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyDmKV": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:17.686480",
+    "tentativas": 435,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyDYTf": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:20.216863",
+    "tentativas": 421,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyD70a": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:22.744290",
+    "tentativas": 434,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyAXfK": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:25.340042",
+    "tentativas": 420,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyAwW3": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:27.863692",
+    "tentativas": 438,
     "ultimo_uso": null,
     "total_requisicoes": 0
   },
   "AIzaSyBE6O": {
-    "bloqueada": false,
-    "bloqueada_em": null,
-    "tentativas": 2,
+    "bloqueada": true,
+    "bloqueada_em": "2025-12-02T11:49:30.563267",
+    "tentativas": 420,
     "ultimo_uso": null,
     "total_requisicoes": 0
   }
