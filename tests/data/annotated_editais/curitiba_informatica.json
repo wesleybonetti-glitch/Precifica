@@ -1,0 +1,49 @@
+{
+  "id": "curitiba_informatica",
+  "orgao": "Prefeitura Municipal de Curitiba - Secretaria de Educação",
+  "formato": "pdf_texto",
+  "texto": "PREFEITURA MUNICIPAL DE CURITIBA\nPregão Eletrônico nº 102/2024\nObjeto: aquisição de 50 computadores para laboratórios educacionais.\nCritério de julgamento: menor preço global.\nA sessão pública ocorrerá em 15/08/2024 às 09h00 (horário de Brasília).\nPrazo de execução: 30 dias corridos após a assinatura.\nValidade das propostas: mínimo de 60 dias.\nHabilitação: regularidade fiscal, capacidade técnica, qualificação econômico-financeira, declaração ME/EPP. Não haverá visita técnica.\nAnexos disponíveis no portal ComprasCuritiba: Anexo I - Termo de Referência (https://compras.curitiba.gov.br/anexo1.pdf) obrigatório; Anexo II - Minuta de Contrato (https://compras.curitiba.gov.br/anexo2.pdf) opcional.\nPenalidades: multa de 2% por atraso superior a 5 dias, conforme art. 86 da Lei 8.666/93.",
+  "anotacoes": {
+    "objeto": "Aquisição de 50 computadores para laboratórios educacionais",
+    "orgao": "Prefeitura Municipal de Curitiba - Secretaria de Educação",
+    "modalidade": "pregao_eletronico",
+    "tipo_julgamento": "menor_preco",
+    "prazos": {
+      "data_abertura": "2024-08-15T09:00:00-03:00",
+      "data_limite_esclarecimentos": null,
+      "data_limite_impugnacao": null,
+      "validade_proposta_dias": 60,
+      "prazo_execucao_dias": 30,
+      "prazo_entrega_documentos_horas": null
+    },
+    "habilitacao": {
+      "regularidade_fiscal": true,
+      "capacidade_tecnica": true,
+      "qualif_economica": true,
+      "declaracao_me_epp": true,
+      "visitas_tecnicas": false,
+      "outros": [
+        "Declaração de inexistência de trabalho infantil"
+      ]
+    },
+    "anexos": [
+      {
+        "nome": "Anexo I - Termo de Referência",
+        "url": "https://compras.curitiba.gov.br/anexo1.pdf",
+        "obrigatorio": true
+      },
+      {
+        "nome": "Anexo II - Minuta de Contrato",
+        "url": "https://compras.curitiba.gov.br/anexo2.pdf",
+        "obrigatorio": false
+      }
+    ],
+    "penalidades": [
+      {
+        "tipo": "multa_atraso",
+        "fundamento_legal": "Art. 86 da Lei 8.666/93",
+        "descricao": "Multa de 2% por atraso superior a 5 dias"
+      }
+    ]
+  }
+}

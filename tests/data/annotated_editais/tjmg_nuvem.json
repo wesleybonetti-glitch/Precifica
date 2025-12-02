@@ -1,0 +1,60 @@
+{
+  "id": "tjmg_nuvem",
+  "orgao": "Tribunal de Justiça de Minas Gerais",
+  "formato": "diario_oficial_html",
+  "texto": "TRIBUNAL DE JUSTIÇA DE MINAS GERAIS - AVISO DE LICITAÇÃO\nConcorrência nº 45/2024\nObjeto: contratação de serviços de nuvem pública para 5 anos, com suporte 24/7.\nModalidade: concorrência. Tipo de julgamento: técnica e preço.\nData de entrega dos envelopes: 02/09/2024 às 14h00, no auditório do TJMG, Belo Horizonte.\nValidade das propostas: 90 dias. Prazo de execução: 180 dias após a ordem de serviço.\nHabilitação: comprovar regularidade fiscal e trabalhista; capacidade técnica com 2 atestados; qualificação econômico-financeira; não há declaração ME/EPP exigida. Visita técnica obrigatória. Outros: certificação ISO 27001.\nAnexos: Edital completo https://licitacoes.tjmg.jus.br/edital45.pdf; Planilha de requisitos https://licitacoes.tjmg.jus.br/req45.xlsx. Ambos obrigatórios.\nPenalidades previstas: advertência, multa de 5% e impedimento de licitar por 12 meses (art. 7º da Lei 10.520/02).",
+  "anotacoes": {
+    "objeto": "Contratação de serviços de nuvem pública por 5 anos, com suporte 24/7",
+    "orgao": "Tribunal de Justiça de Minas Gerais",
+    "modalidade": "concorrencia",
+    "tipo_julgamento": "tecnica_e_preco",
+    "prazos": {
+      "data_abertura": "2024-09-02T14:00:00-03:00",
+      "data_limite_esclarecimentos": null,
+      "data_limite_impugnacao": null,
+      "validade_proposta_dias": 90,
+      "prazo_execucao_dias": 180,
+      "prazo_entrega_documentos_horas": null
+    },
+    "habilitacao": {
+      "regularidade_fiscal": true,
+      "capacidade_tecnica": true,
+      "qualif_economica": true,
+      "declaracao_me_epp": false,
+      "visitas_tecnicas": true,
+      "outros": [
+        "Certificação ISO 27001",
+        "Dois atestados de capacidade técnica"
+      ]
+    },
+    "anexos": [
+      {
+        "nome": "Edital completo",
+        "url": "https://licitacoes.tjmg.jus.br/edital45.pdf",
+        "obrigatorio": true
+      },
+      {
+        "nome": "Planilha de requisitos",
+        "url": "https://licitacoes.tjmg.jus.br/req45.xlsx",
+        "obrigatorio": true
+      }
+    ],
+    "penalidades": [
+      {
+        "tipo": "advertencia",
+        "fundamento_legal": "Aviso de licitação TJMG 45/2024",
+        "descricao": "Advertência"
+      },
+      {
+        "tipo": "multa",
+        "fundamento_legal": "Aviso de licitação TJMG 45/2024",
+        "descricao": "Multa de 5%"
+      },
+      {
+        "tipo": "impedimento_licitar",
+        "fundamento_legal": "Art. 7º da Lei 10.520/02",
+        "descricao": "Impedimento de licitar por 12 meses"
+      }
+    ]
+  }
+}

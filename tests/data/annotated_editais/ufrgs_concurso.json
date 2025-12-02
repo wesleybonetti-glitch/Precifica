@@ -1,0 +1,49 @@
+{
+  "id": "ufrgs_concurso",
+  "orgao": "Universidade Federal do Rio Grande do Sul",
+  "formato": "portal_universitario_pdf_imagem",
+  "texto": "UNIVERSIDADE FEDERAL DO RIO GRANDE DO SUL\nConcurso nº 12/2025 - Projetos culturais\nObjeto: seleção de propostas culturais para execução no campus Porto Alegre.\nModalidade: concurso. Critério de julgamento: melhor técnica.\nAbertura dos envelopes: 20/01/2025 às 10h30 (horário local).\nValidade das propostas: 45 dias. Prazo de execução: 120 dias após a contratação. Prazo para entrega de documentos complementares: 48 horas.\nHabilitação mínima: regularidade fiscal, comprovação de capacidade técnica e qualificação econômico-financeira. Não é exigida declaração ME/EPP. Visita técnica dispensada. Outros: comprovação de experiência em atividades culturais universitárias.\nAnexos: Edital e formulários disponíveis em https://concursos.ufrgs.br/concurso12.pdf (obrigatório).\nPenalidades: advertência e multa de 1% do valor contratado para atrasos injustificados, conforme regulamento interno.",
+  "anotacoes": {
+    "objeto": "Seleção de propostas culturais para execução no campus Porto Alegre",
+    "orgao": "Universidade Federal do Rio Grande do Sul",
+    "modalidade": "concurso",
+    "tipo_julgamento": "melhor_tecnica",
+    "prazos": {
+      "data_abertura": "2025-01-20T10:30:00-03:00",
+      "data_limite_esclarecimentos": null,
+      "data_limite_impugnacao": null,
+      "validade_proposta_dias": 45,
+      "prazo_execucao_dias": 120,
+      "prazo_entrega_documentos_horas": 48
+    },
+    "habilitacao": {
+      "regularidade_fiscal": true,
+      "capacidade_tecnica": true,
+      "qualif_economica": true,
+      "declaracao_me_epp": false,
+      "visitas_tecnicas": false,
+      "outros": [
+        "Experiência em atividades culturais universitárias"
+      ]
+    },
+    "anexos": [
+      {
+        "nome": "Edital e formulários",
+        "url": "https://concursos.ufrgs.br/concurso12.pdf",
+        "obrigatorio": true
+      }
+    ],
+    "penalidades": [
+      {
+        "tipo": "advertencia",
+        "fundamento_legal": "Regulamento interno UFRGS",
+        "descricao": "Advertência por descumprimento de prazos"
+      },
+      {
+        "tipo": "multa",
+        "fundamento_legal": "Regulamento interno UFRGS",
+        "descricao": "Multa de 1% para atrasos injustificados"
+      }
+    ]
+  }
+}
