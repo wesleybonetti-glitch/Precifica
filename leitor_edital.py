@@ -276,6 +276,21 @@ def formatar_resultado_html(texto_analise):
     linhas = texto_analise.split('\n')
     secao_atual = None
 
+    def separar_campo_valor(linha):
+        """Divide uma linha em campo e valor usando diferentes delimitadores."""
+        linha_limpa = linha.replace('**', '').replace('*', '').strip(' -')
+
+        if not linha_limpa:
+            return None, None
+
+        partes = re.split(r'\s{2,}|\t+|:\s+|\s-\s', linha_limpa, maxsplit=1)
+        if len(partes) == 2:
+            campo, valor = partes[0].strip(), partes[1].strip()
+            if campo and valor:
+                return campo, valor
+
+        return None, None
+
     for linha in linhas:
         linha = linha.strip()
         if not linha:
@@ -311,30 +326,20 @@ def formatar_resultado_html(texto_analise):
         '''
 
         for linha in secoes['informacoes_gerais']:
-            if ':' in linha or '|' in linha:
-                linha = linha.replace('**', '').replace('*', '')
+            campo, valor = separar_campo_valor(linha)
 
-                if ':' in linha:
-                    partes = linha.split(':', 1)
-                elif '|' in linha:
-                    partes = linha.split('|', 1)
-                else:
-                    continue
+            if not campo or not valor:
+                continue
 
-                if len(partes) == 2:
-                    campo = partes[0].strip().replace('-', '').strip()
-                    valor = partes[1].strip()
+            if 'Razão Social' in campo and 'CNPJ' in campo:
+                continue
 
-                    if not valor or valor == '-':
-                        continue
+            if 'Não especificado' in valor:
+                valor = f'<span class="valor-nao-especificado">{valor}</span>'
+            elif 'R$' in valor or 'Valor' in campo or 'valor' in campo:
+                valor = f'<span class="valor-destaque">{valor}</span>'
 
-                    if 'Razão Social' in campo and 'CNPJ' in campo:
-                        continue
-
-                    if 'R$' in valor or 'Valor' in campo or 'valor' in campo:
-                        valor = f'<span class="valor-destaque">{valor}</span>'
-
-                    html += f'''
+            html += f'''
                         <tr>
                             <th>{campo}</th>
                             <td>{valor}</td>
@@ -366,7 +371,10 @@ def formatar_resultado_html(texto_analise):
         for linha in secoes['habilitacao']:
             linha = linha.replace('**', '').replace('*', '').strip()
 
-            if ':' in linha and not linha.startswith('-'):
+            if not linha:
+                continue
+
+            if (':' in linha or ' - ' in linha) and not linha.startswith('-'):
                 if requisito_atual:
                     desc = ' '.join(descricao_atual)
                     if desc:
@@ -377,7 +385,7 @@ def formatar_resultado_html(texto_analise):
                         </li>
                         '''
 
-                partes = linha.split(':', 1)
+                partes = re.split(r':\s+|\s-\s', linha, maxsplit=1)
                 requisito_atual = partes[0].strip()
                 descricao_atual = [partes[1].strip()] if len(partes) > 1 and partes[1].strip() else []
             else:
@@ -425,22 +433,27 @@ def formatar_resultado_html(texto_analise):
         '''
 
         for linha in secoes['itens']:
-            if '|' in linha:
-                if 'Item' in linha or '---' in linha or '===' in linha:
+            linha_limpa = linha.strip()
+
+            # Linhas com pipes (markdown)
+            if '|' in linha_limpa:
+                if 'Item' in linha_limpa or '---' in linha_limpa or '===' in linha_limpa:
                     continue
 
-                colunas = [col.strip() for col in linha.split('|')]
-                colunas = [col for col in colunas if col]
+                colunas = [col.strip() for col in linha_limpa.split('|') if col.strip()]
+            else:
+                # Tabelas coladas com tabs ou múltiplos espaços
+                colunas = [col.strip() for col in re.split(r'\t+|\s{2,}', linha_limpa) if col.strip()]
 
-                if len(colunas) >= 3:
-                    html += '<tr>'
-                    for i, col in enumerate(colunas):
-                        if i < 6:
-                            html += f'<td>{col}</td>'
-                    while len(colunas) < 6:
-                        html += '<td>-</td>'
-                        colunas.append('-')
-                    html += '</tr>'
+            if len(colunas) >= 3:
+                html += '<tr>'
+                for i, col in enumerate(colunas):
+                    if i < 6:
+                        html += f'<td>{col}</td>'
+                while len(colunas) < 6:
+                    html += '<td>-</td>'
+                    colunas.append('-')
+                html += '</tr>'
 
         html += '''
                         </tbody>
