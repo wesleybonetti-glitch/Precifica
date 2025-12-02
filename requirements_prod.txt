@@ -60,3 +60,8 @@ tzdata==2025.2
 uritemplate==4.2.0
 urllib3==2.5.0
 zipp==3.23.0
+pdfminer.six==20231228
+camelot-py==0.11.0
+tabula-py==2.9.3
+pytesseract==0.3.10
+paddleocr==2.7.3

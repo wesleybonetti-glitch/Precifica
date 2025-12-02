@@ -64,3 +64,9 @@ WTForms==3.2.1
 openai>=1.0.0
 tenacity>=8.2.3 # retries exponenciais
 PyMuPDF>=1.23.0 # se ainda não estiver
+pdfminer.six==20231228
+camelot-py==0.11.0
+tabula-py==2.9.3
+pytesseract==0.3.10
+paddleocr==2.7.3
+pytest==8.3.4

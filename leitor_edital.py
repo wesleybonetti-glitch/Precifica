@@ -82,17 +82,28 @@ def detectar_modelo_disponivel():
 
 
 def extrair_texto_de_pdf(caminho_pdf):
-    """Extrai todo o texto de um arquivo PDF."""
+    """Extrai texto de PDF com detecção automática e OCR.
+
+    A função utiliza heurísticas de densidade de texto para classificar
+    o arquivo (texto, imagem ou misto) e aciona OCR (por padrão
+    `por+eng`) quando encontra páginas sem conteúdo textual. Também
+    preserva bounding boxes dos trechos lidos e captura tabelas via
+    múltiplos backends.
+    """
     try:
-        doc = fitz.open(caminho_pdf)
-        texto_completo = ""
-        for pagina in doc:
-            texto_completo += pagina.get_text()
-        doc.close()
-        return texto_completo
+        from pdf_processing import extrair_texto_avancado
+
+        resultado = extrair_texto_avancado(caminho_pdf)
+        return resultado.texto_completo
     except Exception as e:
         print(f"Erro ao ler o PDF: {e}")
-        return None
+        try:
+            doc = fitz.open(caminho_pdf)
+            texto_completo = "".join(pagina.get_text() for pagina in doc)
+            doc.close()
+            return texto_completo
+        except Exception:
+            return None
 
 
 def chamar_api_com_rotacao(chave_api, prompt, nome_modelo, generation_config):
