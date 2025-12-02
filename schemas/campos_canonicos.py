@@ -142,8 +142,8 @@ def campo_json_schemas() -> dict:
     para manter consistência entre validações de campo e de payload completo.
     """
 
-    schema = LicitacaoCanonica.model_json_schema(ref_template="#/definitions/{model}")
-    definitions = schema.get("definitions", {})
+    schema = LicitacaoCanonica.model_json_schema()
+    definitions = schema.get("$defs", {}) or schema.get("definitions", {})
     properties = schema.get("properties", {})
 
     resolved = {}
